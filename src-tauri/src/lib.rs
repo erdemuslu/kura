@@ -90,6 +90,102 @@ async fn scan_directory(
     .map_err(|e| e.to_string())?
 }
 
+/// Müzik tarayıcı: sanatçı listesi (albüm/şarkı sayılarıyla).
+#[tauri::command]
+async fn list_artists(
+    query: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<db::ArtistSummary>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_artists(&conn, query.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Müzik tarayıcı: albüm listesi (sanatçıya göre filtrelenebilir).
+#[tauri::command]
+async fn list_albums(
+    artist: Option<String>,
+    query: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<db::AlbumSummary>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_albums(&conn, artist.as_deref(), query.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Müzik tarayıcı: bir albümün şarkıları (disk + track sırasına göre).
+#[tauri::command]
+async fn album_tracks(
+    album: String,
+    artist: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<db::MediaItem>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::album_tracks(&conn, &album, &artist)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Müzik tarayıcı: bir sanatçının tüm şarkıları ("Tümünü Çal" için).
+#[tauri::command]
+async fn artist_tracks(
+    artist: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<db::MediaItem>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::artist_tracks(&conn, &artist)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Birden çok dosyayı .m3u8 playlist olarak oynatıcıya ekler ("Tümünü Çal").
+/// Yalnızca indekste kayıtlı dosyalar playlist'e alınır (güvenlik).
+#[tauri::command]
+async fn open_media_batch(
+    file_paths: Vec<String>,
+    target_app: String,
+    playlist_title: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let db_path = state.db_path.clone();
+    let added = tokio::task::spawn_blocking(move || -> Result<usize, String> {
+        let conn = db::open(&db_path)?;
+        let mut valid: Vec<String> = Vec::new();
+        for p in &file_paths {
+            if db::path_exists(&conn, p)? {
+                valid.push(p.clone());
+            }
+        }
+        if valid.is_empty() {
+            return Err("Çalınacak kayıtlı dosya bulunamadı (disk çevrimdışı olabilir)".into());
+        }
+        let refs: Vec<&str> = valid.iter().map(|s| s.as_str()).collect();
+        runner::execute_playlist(&refs, &target_app, &playlist_title)?;
+        Ok(valid.len())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(serde_json::json!({
+        "success": true,
+        "message": format!("{added} şarkı oynatıcıya eklendi")
+    }))
+}
+
 /// Bağlı diskleri listeler.
 #[tauri::command]
 fn list_disks() -> Vec<scanner::DiskInfo> {
@@ -173,7 +269,12 @@ pub fn run() {
             query_library,
             scan_directory,
             list_disks,
-            get_remote_info
+            get_remote_info,
+            list_artists,
+            list_albums,
+            album_tracks,
+            artist_tracks,
+            open_media_batch
         ])
         .run(tauri::generate_context!())
         .expect("Tauri uygulaması çalıştırılamadı");

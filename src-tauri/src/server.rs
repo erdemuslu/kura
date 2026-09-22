@@ -27,6 +27,13 @@ pub struct OpenMediaPayload {
 }
 
 #[derive(Deserialize)]
+pub struct OpenBatchPayload {
+    pub file_paths: Vec<String>,
+    pub target_app: String,
+    pub playlist_title: String,
+}
+
+#[derive(Deserialize)]
 pub struct ScanPayload {
     pub path: String,
     pub disk_label: Option<String>,
@@ -39,6 +46,14 @@ pub struct LibraryQuery {
     pub q: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+}
+
+/// Müzik tarayıcı uçları için ortak query parametreleri.
+#[derive(Deserialize)]
+pub struct MusicQuery {
+    pub q: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -117,6 +132,11 @@ pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
         .route("/api/disks", get(disks))
         .route("/api/scan", post(scan))
         .route("/api/open", post(open_media_route))
+        .route("/api/music/artists", get(music_artists))
+        .route("/api/music/albums", get(music_albums))
+        .route("/api/music/tracks", get(music_tracks))
+        .route("/api/music/artist-tracks", get(music_artist_tracks))
+        .route("/api/open-batch", post(open_batch))
         .fallback_service(ServeDir::new(static_root).append_index_html_on_directories(true))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -241,6 +261,132 @@ async fn open_media_route(
         Ok(()) => Ok(Json(ApiResponse {
             success: true,
             message: "Medya başlatıldı".into(),
+        })),
+        Err(err) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message: err,
+            }),
+        )),
+    }
+}
+
+async fn music_artists(
+    Query(q): Query<MusicQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<Vec<db::ArtistSummary>>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    let artists = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_artists(&conn, q.q.as_deref())
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+    Ok(Json(artists))
+}
+
+async fn music_albums(
+    Query(q): Query<MusicQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<Vec<db::AlbumSummary>>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    let albums = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_albums(&conn, q.artist.as_deref(), q.q.as_deref())
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+    Ok(Json(albums))
+}
+
+async fn music_tracks(
+    Query(q): Query<MusicQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<Vec<db::MediaItem>>, (StatusCode, Json<ApiResponse>)> {
+    let (Some(album), Some(artist)) = (q.album.clone(), q.artist.clone()) else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message: "album ve artist parametreleri zorunlu".into(),
+            }),
+        ));
+    };
+    let db_path = st.db_path.clone();
+    let tracks = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::album_tracks(&conn, &album, &artist)
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+    Ok(Json(tracks))
+}
+
+/// Bir sanatçının tüm şarkıları ("Tümünü Çal" için; album+artist'ten bağımsız).
+async fn music_artist_tracks(
+    Query(q): Query<MusicQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<Vec<db::MediaItem>>, (StatusCode, Json<ApiResponse>)> {
+    let Some(artist) = q.artist.clone() else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message: "artist parametresi zorunlu".into(),
+            }),
+        ));
+    };
+    let db_path = st.db_path.clone();
+    let tracks = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::artist_tracks(&conn, &artist)
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+    Ok(Json(tracks))
+}
+
+/// "Tümünü Çal": birden çok dosyayı playlist olarak oynatıcıya ekler.
+async fn open_batch(
+    State(st): State<ServerState>,
+    headers: HeaderMap,
+    Json(payload): Json<OpenBatchPayload>,
+) -> Result<Json<ApiResponse>, (StatusCode, Json<ApiResponse>)> {
+    check_auth(&st, &headers).await?;
+
+    let db_path = st.db_path.clone();
+    let target_app = payload.target_app.clone();
+    let playlist_title = payload.playlist_title.clone();
+    let result =
+        tokio::task::spawn_blocking(move || -> Result<usize, String> {
+            let conn = db::open(&db_path)?;
+            let mut valid: Vec<String> = Vec::new();
+            for p in &payload.file_paths {
+                if db::path_exists(&conn, p)? {
+                    valid.push(p.clone());
+                }
+            }
+            if valid.is_empty() {
+                return Err(
+                    "Çalınacak kayıtlı dosya bulunamadı (disk çevrimdışı olabilir)".into(),
+                );
+            }
+            let refs: Vec<&str> = valid.iter().map(|s| s.as_str()).collect();
+            runner::execute_playlist(&refs, &target_app, &playlist_title)?;
+            Ok(valid.len())
+        })
+        .await
+        .map_err(|e| internal_error(e.to_string()))?;
+
+    match result {
+        Ok(added) => Ok(Json(ApiResponse {
+            success: true,
+            message: format!("{added} şarkı oynatıcıya eklendi"),
         })),
         Err(err) => Err((
             StatusCode::BAD_REQUEST,

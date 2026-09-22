@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import MediaGrid from './components/MediaGrid';
+import MusicView from './components/MusicView';
 import PlayerSelect from './components/PlayerSelect';
 import ScanPanel from './components/ScanPanel';
 import StorageBadge from './components/StorageBadge';
@@ -27,7 +28,9 @@ export default function App() {
   const [remote, setRemote] = useState<RemoteInfo | null>(null);
   const [tokenInput, setTokenInput] = useState('');
 
-  const library = useLibrary(tab, query);
+  // Müzik sekmesinde düz liste sorgusu atlanır; MusicView hiyerarşik
+  // (sanatçı/albüm) sorgularını kendisi yapar.
+  const library = useLibrary(tab, query, tab !== 'music');
   const disks = useDisks();
   const launch = useLaunchPlayer();
 
@@ -159,12 +162,21 @@ export default function App() {
           <p className="text-sm text-red-400">Hata: {String(launch.error)}</p>
         )}
 
-        <MediaGrid
-          items={library.data}
-          loading={library.isLoading}
-          playingPath={playingPath}
-          onPlay={(item) => handlePlay(item.file_path)}
-        />
+        {tab === 'music' ? (
+          <MusicView
+            player={player}
+            query={query}
+            playingPath={playingPath}
+            onPlayed={setPlayingPath}
+          />
+        ) : (
+          <MediaGrid
+            items={library.data}
+            loading={library.isLoading}
+            playingPath={playingPath}
+            onPlay={(item) => handlePlay(item.file_path)}
+          />
+        )}
       </main>
     </div>
   );

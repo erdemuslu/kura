@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/api/client.ts","./src/components/mediagrid.tsx","./src/components/playerselect.tsx","./src/components/scanpanel.tsx","./src/components/storagebadge.tsx","./src/hooks/usemedia.ts"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/api/client.ts","./src/components/mediagrid.tsx","./src/components/musicview.tsx","./src/components/playerselect.tsx","./src/components/scanpanel.tsx","./src/components/storagebadge.tsx","./src/hooks/usemedia.ts"],"version":"5.9.3"}

@@ -65,6 +65,11 @@ npm run tauri build         # release paketi
 | `GET /api/disks` | Bağlı diskler |
 | `POST /api/scan` `{ path, disk_label? }` | Dizini tarayıp indeksler |
 | `POST /api/open` `{ file_path, target_app }` | Medyayı harici oynatıcıda başlatır |
+| `GET /api/music/artists?q=` | Sanatçılar (albüm/şarkı sayılarıyla) |
+| `GET /api/music/albums?artist=&q=` | Albümler (sanatçıya göre filtrelenebilir) |
+| `GET /api/music/tracks?album=&artist=` | Bir albümün şarkıları (disk + track sırasına göre) |
+| `GET /api/music/artist-tracks?artist=` | Bir sanatçının tüm şarkıları |
+| `POST /api/open-batch` `{ file_paths, target_app, playlist_title }` | "Tümünü Çal" — .m3u8 playlist olarak oynatıcıya ekler |
 
 ### Güvenlik notları
 
@@ -80,8 +85,13 @@ npm run tauri build         # release paketi
 
 1. Uygulamayı başlatın.
 2. "Dizin yolu" alanına bir medya klasörü girin (örn. `/Volumes/DiskAdi/Filmler`)
-   ve **Tara**'ya basın — dosyalar türlerine göre Film/Dizi/Müzik sekmelerine düşer.
+   veya "Gözat…" ile seçin — dosyalar türlerine göre Film/Dizi/Müzik sekmelerine düşer.
    Dizi tespiti dosya adındaki `SxxExx` desenine göredir.
 3. Kartlara tıklayarak seçili oynatıcıda başlatın.
-4. Telefonunuzdan `http://<bilgisayar-ip>:8080` adresini açın — aynı arayüz
+4. Müzik sekmesi hiyerarşiktir: Albümler/Sanatçılar → sanatçı → albüm → şarkı
+   listesi. Her kartın "⋯" menüsündeki **Tümünü Çal**, kartın tüm şarkılarını
+   .m3u8 playlist olarak seçili oynatıcıya ekler. Tag'i olmayan dosyalarda
+   sanatçı/albüm bilgisi klasör yapısından (`Sanatçı/Albüm/01 - Sarkı.mp3`)
+   çıkarılır.
+5. Telefonunuzdan `http://<bilgisayar-ip>:8080` adresini açın — aynı arayüz
    uzaktan kumanda olarak çalışır.

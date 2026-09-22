@@ -135,17 +135,33 @@ pub fn scan_directory(
 
         let item = match kind {
             MediaKind::Audio => {
-                let (title, artist, album, duration) = read_audio_metadata(path, &stem);
+                let mut m = read_audio_metadata(path, &stem);
+                // Tag yoksa klasör yapısından çıkarım:
+                // .../<sanatçı>/<albüm>/<dosya> → album ve artist fallback'i
+                let (album_fb, artist_fb) = folder_fallbacks(path, root);
+                if m.album.is_none() {
+                    m.album = album_fb;
+                }
+                if m.artist.is_none() {
+                    m.artist = artist_fb;
+                }
+                // Tag yoksa dosya adı başındaki sayı ("01 -", "12.", "7_")
+                if m.track_number.is_none() {
+                    m.track_number = track_from_stem(&stem);
+                }
                 NewMediaItem {
-                    title,
-                    artist,
-                    album,
+                    title: m.title,
+                    artist: m.artist,
+                    album: m.album,
                     media_type: "music",
                     file_path,
                     file_size: meta.len() as i64,
                     disk_label: summary.disk_label.clone(),
                     format: ext,
-                    duration,
+                    duration: m.duration,
+                    track_number: m.track_number,
+                    disc_number: m.disc_number,
+                    year: m.year,
                 }
             }
             MediaKind::Video => NewMediaItem {
@@ -162,6 +178,9 @@ pub fn scan_directory(
                 disk_label: summary.disk_label.clone(),
                 format: ext,
                 duration: None,
+                track_number: None,
+                disc_number: None,
+                year: None,
             },
         };
 
@@ -173,32 +192,86 @@ pub fn scan_directory(
     Ok(summary)
 }
 
+/// lofty'den okunan + fallback'lerle tamamlanan müzik metadata'sı.
+struct AudioMeta {
+    title: String,
+    artist: Option<String>,
+    album: Option<String>,
+    duration: Option<i64>,
+    track_number: Option<i64>,
+    disc_number: Option<i64>,
+    year: Option<i64>,
+}
+
 /// lofty ile ID3/FLAC metadata okur; hata olursa dosya adına geri düşer.
-fn read_audio_metadata(
-    path: &Path,
-    fallback_title: &str,
-) -> (String, Option<String>, Option<String>, Option<i64>) {
-    // AudioFile (properties), TaggedFileExt (primary_tag), Accessor (title/artist/album)
+/// Artist/album/track fallback'leri `scan_directory` içinde uygulanır.
+fn read_audio_metadata(path: &Path, fallback_title: &str) -> AudioMeta {
+    // AudioFile (properties), TaggedFileExt (primary_tag), Accessor (title/artist/album/...)
     use lofty::prelude::*;
 
     match lofty::read_from_path(path) {
         Ok(tagged_file) => {
             let duration_secs = tagged_file.properties().duration().as_secs();
             let tag = tagged_file.primary_tag();
-            let title = tag
-                .and_then(|t| t.title().map(|s| s.to_string()))
-                .unwrap_or_else(|| fallback_title.to_string());
-            let artist = tag.and_then(|t| t.artist().map(|s| s.to_string()));
-            let album = tag.and_then(|t| t.album().map(|s| s.to_string()));
-            let duration = if duration_secs > 0 {
-                Some(duration_secs as i64)
-            } else {
-                None
-            };
-            (title, artist, album, duration)
+            AudioMeta {
+                title: tag
+                    .and_then(|t| t.title().map(|s| s.to_string()))
+                    .unwrap_or_else(|| fallback_title.to_string()),
+                artist: tag.and_then(|t| t.artist().map(|s| s.to_string())),
+                album: tag.and_then(|t| t.album().map(|s| s.to_string())),
+                duration: if duration_secs > 0 {
+                    Some(duration_secs as i64)
+                } else {
+                    None
+                },
+                track_number: tag.and_then(|t| t.track()).map(|n| n as i64),
+                disc_number: tag.and_then(|t| t.disk()).map(|n| n as i64),
+                year: tag.and_then(|t| t.year()).map(|n| n as i64),
+            }
         }
-        Err(_) => (fallback_title.to_string(), None, None, None),
+        Err(_) => AudioMeta {
+            title: fallback_title.to_string(),
+            artist: None,
+            album: None,
+            duration: None,
+            track_number: None,
+            disc_number: None,
+            year: None,
+        },
     }
+}
+
+/// Klasör yapısından (sanatçı, albüm) çıkarımı:
+/// `<root>/Sanatçı/Albüm/01 - Sarkı.mp3` → (Some("Albüm"), Some("Sanatçı")).
+/// Dönüş sırası: (album_fallback, artist_fallback).
+fn folder_fallbacks(path: &Path, root: &Path) -> (Option<String>, Option<String>) {
+    let Ok(rel) = path.strip_prefix(root) else {
+        return (None, None);
+    };
+    let comps: Vec<String> = rel
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(name) => Some(name.to_string_lossy().to_string()),
+            _ => None,
+        })
+        .collect();
+    // comps son elemanı dosya; -2 = albüm klasörü, -3 = sanatçı klasörü
+    let album = comps.len().checked_sub(2).and_then(|i| comps.get(i)).cloned();
+    let artist = comps.len().checked_sub(3).and_then(|i| comps.get(i)).cloned();
+    (album, artist)
+}
+
+/// Dosya adı başındaki track numarasını çıkarır: "01 - x", "12. y", "7_z" → 1, 12, 7.
+fn track_from_stem(stem: &str) -> Option<i64> {
+    let trimmed = stem.trim_start_matches([' ', '-', '_', '.']);
+    let digits: String = trimmed
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if digits.is_empty() || digits.len() > 3 {
+        return None;
+    }
+    digits.parse().ok()
 }
 
 /// Bağlı (mount edilmiş) diskleri listeler.

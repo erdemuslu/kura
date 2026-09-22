@@ -1,5 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  getAlbums,
+  getAlbumTracks,
+  getArtists,
   getDisks,
   getLibrary,
   launchPlayer,
@@ -8,11 +11,14 @@ import {
   type PlayRequest,
 } from '../api/client';
 
-/** Kütüphane sorgusu (tür + arama metni). */
-export function useLibrary(type: MediaType, query: string) {
+/** Kütüphane sorgusu (tür + arama metni). `enabled=false` ile müzik
+ *  sekmesindeki gereksiz düz-liste sorgusu atlanır (MusicView kendi
+ *  hiyerarşik sorgularını kullanır). */
+export function useLibrary(type: MediaType, query: string, enabled = true) {
   return useQuery({
     queryKey: ['library', type, query],
     queryFn: () => getLibrary(type, query),
+    enabled,
   });
 }
 
@@ -28,6 +34,29 @@ export function useDisks() {
 /** Medya başlatma mutasyonu. */
 export function useLaunchPlayer() {
   return useMutation({ mutationFn: (req: PlayRequest) => launchPlayer(req) });
+}
+
+/** Müzik tarayıcı sorguları. */
+export function useArtists(query: string) {
+  return useQuery({
+    queryKey: ['music-artists', query],
+    queryFn: () => getArtists(query),
+  });
+}
+
+export function useAlbums(query: string, artist?: string) {
+  return useQuery({
+    queryKey: ['music-albums', query, artist ?? ''],
+    queryFn: () => getAlbums(query, artist),
+  });
+}
+
+export function useAlbumTracks(album: string, artist: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['album-tracks', album, artist],
+    queryFn: () => getAlbumTracks(album, artist),
+    enabled,
+  });
 }
 
 /** Dizin tarama mutasyonu; sonrasında kütüphane ve disk sorgularını invalidete eder. */

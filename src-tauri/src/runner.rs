@@ -26,7 +26,49 @@ pub fn execute_player(file_path: &str, target_app: &str) -> Result<(), String> {
     if !Path::new(file_path).exists() {
         return Err("Dosya bulunamadı. Disk çevrimdışı olabilir.".into());
     }
+    launch(file_path, target_app)
+}
 
+/// Birden çok dosyayı tek bir .m3u8 playlist dosyasına yazıp oynatıcıya
+/// açtırır ("Tümünü Çal" — şarkılar oynatıcının çalma listesine eklenir).
+/// Çağıran taraf dosyaların indekste kayıtlı olduğunu doğrulamalıdır.
+pub fn execute_playlist(
+    file_paths: &[&str],
+    target_app: &str,
+    _playlist_title: &str,
+) -> Result<(), String> {
+    if !is_valid_player(target_app) {
+        return Err(format!("Desteklenmeyen oynatıcı: {target_app}"));
+    }
+    if file_paths.is_empty() {
+        return Err("Playlist boş — çalınacak şarkı yok".into());
+    }
+
+    let dir = std::env::temp_dir().join("local-media-hub-playlists");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Playlist dizini oluşturulamadı: {e}"))?;
+    // Önceki oturumlardan kalan geçici playlistleri temizle.
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+
+    let playlist_path = dir.join(format!("{}.m3u8", uuid::Uuid::new_v4()));
+    let mut content = String::from("#EXTM3U\n");
+    for p in file_paths {
+        // Başlık EXTINF satırları eklemiyoruz: oynatıcılar gömülü
+        // tag'lerden başlıkları kendileri okur.
+        content.push_str(p);
+        content.push('\n');
+    }
+    std::fs::write(&playlist_path, content)
+        .map_err(|e| format!("Playlist yazılamadı: {e}"))?;
+
+    launch(&playlist_path.to_string_lossy(), target_app)
+}
+
+/// OS'a özgü başlatma mantığı (beyaz liste kontrolü yapılmış kabul eder).
+fn launch(file_path: &str, target_app: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let mut cmd = Command::new("open");

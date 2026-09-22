@@ -17,9 +17,27 @@ export interface MediaItem {
   disk_label: string;
   format: string;
   duration: number | null;
+  track_number: number | null;
+  disc_number: number | null;
+  year: number | null;
   cover_image_path: string | null;
   created_at: string | null;
   updated_at: string | null;
+}
+
+/** Müzik tarayıcı: sanatçı özeti (gruplama sorgusundan döner). */
+export interface ArtistSummary {
+  artist: string;
+  album_count: number;
+  track_count: number;
+}
+
+/** Müzik tarayıcı: albüm özeti (gruplama sorgusundan döner). */
+export interface AlbumSummary {
+  album: string;
+  artist: string;
+  track_count: number;
+  total_duration: number | null;
 }
 
 export interface DiskInfo {
@@ -186,6 +204,92 @@ export async function getRemoteInfo(): Promise<RemoteInfo | null> {
   if (!isRunningInTauri()) return null;
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<RemoteInfo>('get_remote_info');
+}
+
+/** Müzik tarayıcı: sanatçıları listeler. */
+export async function getArtists(query: string): Promise<ArtistSummary[]> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<ArtistSummary[]>('list_artists', { query: query || null });
+  }
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  const res = await restFetch(`/api/music/artists?${params}`);
+  return res.json();
+}
+
+/** Müzik tarayıcı: albümleri listeler (sanatçıya göre filtrelenebilir). */
+export async function getAlbums(
+  query: string,
+  artist?: string,
+): Promise<AlbumSummary[]> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<AlbumSummary[]>('list_albums', {
+      artist: artist || null,
+      query: query || null,
+    });
+  }
+  const params = new URLSearchParams();
+  if (artist) params.set('artist', artist);
+  if (query) params.set('q', query);
+  const res = await restFetch(`/api/music/albums?${params}`);
+  return res.json();
+}
+
+/** Müzik tarayıcı: bir albümün şarkılarını (disk + track sırasına göre). */
+export async function getAlbumTracks(
+  album: string,
+  artist: string,
+): Promise<MediaItem[]> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<MediaItem[]>('album_tracks', { album, artist });
+  }
+  const params = new URLSearchParams({ album, artist });
+  const res = await restFetch(`/api/music/tracks?${params}`);
+  return res.json();
+}
+
+/** Müzik tarayıcı: bir sanatçının tüm şarkıları ("Tümünü Çal" için). */
+export async function getArtistTracks(artist: string): Promise<MediaItem[]> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<MediaItem[]>('artist_tracks', { artist });
+  }
+  const params = new URLSearchParams({ artist });
+  const res = await restFetch(`/api/music/artist-tracks?${params}`);
+  return res.json();
+}
+
+/** "Tümünü Çal": birden çok dosyayı playlist olarak oynatıcıya ekler. */
+export async function launchPlayerBatch(
+  filePaths: string[],
+  targetApp: string,
+  playlistTitle: string,
+): Promise<LaunchResult> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    try {
+      const result = await invoke<{ success: boolean; message: string }>(
+        'open_media_batch',
+        { filePaths, targetApp, playlistTitle },
+      );
+      return result;
+    } catch (error) {
+      return { success: false, message: String(error) };
+    }
+  }
+  const res = await restFetch('/api/open-batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      file_paths: filePaths,
+      target_app: targetApp,
+      playlist_title: playlistTitle,
+    }),
+  });
+  return res.json();
 }
 
 /**
