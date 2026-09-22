@@ -292,6 +292,26 @@ export async function launchPlayerBatch(
   return res.json();
 }
 
+/* Ayarlar — yalnızca masaüstü IPC (ayarlar ağ üzerinden değiştirilemez). */
+
+/** Uzaktan erişim token doğrulamasını açar/kapar. */
+export async function setRemoteAuthEnabled(enabled: boolean): Promise<void> {
+  if (!isRunningInTauri()) {
+    throw new Error('Ayarlar yalnızca masaüstü uygulamasından değiştirilebilir');
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('set_remote_auth_enabled', { enabled });
+}
+
+/** Uzaktan erişim token'ını yeniden üretir ve döndürür. */
+export async function regenerateRemoteToken(): Promise<string> {
+  if (!isRunningInTauri()) {
+    throw new Error('Ayarlar yalnızca masaüstü uygulamasından değiştirilebilir');
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string>('regenerate_remote_token');
+}
+
 /**
  * Native klasör seçme diyaloğunu açar (yalnızca masaüstünde).
  * Tarayıcı/remote modunda null döner — orada manuel yol girişi kullanılır.

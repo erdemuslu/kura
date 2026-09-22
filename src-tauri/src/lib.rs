@@ -10,9 +10,16 @@ mod scanner;
 mod server;
 
 use std::path::PathBuf;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub const SERVER_PORT: u16 = 8080;
+
+/// Tarama ilerleme event yükü (`scan-progress`).
+#[derive(serde::Serialize, Clone)]
+pub struct ScanProgress {
+    pub scanned_files: u64,
+    pub indexed: u64,
+}
 
 /// IPC komutları ile Axum handler'larının paylaştığı durum.
 /// Kısa ömürlü SQLite bağlantıları açıldığından yalnızca DB yolunu taşır.
@@ -75,8 +82,10 @@ async fn query_library(
 }
 
 /// Dizini tarayıp SQLite'a indeksler (masaüstü IPC yolu).
+/// İlerleme `scan-progress` event'i ile her 25 dosyada bir bildirilir.
 #[tauri::command]
 async fn scan_directory(
+    app: tauri::AppHandle,
     path: String,
     disk_label: Option<String>,
     state: tauri::State<'_, AppState>,
@@ -84,7 +93,24 @@ async fn scan_directory(
     let db_path = state.db_path.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db::open(&db_path)?;
-        scanner::scan_directory(&conn, std::path::Path::new(&path), disk_label.as_deref())
+        let emit_progress = {
+            let app = app.clone();
+            move |scanned: u64, indexed: u64| {
+                let _ = app.emit(
+                    "scan-progress",
+                    ScanProgress {
+                        scanned_files: scanned,
+                        indexed,
+                    },
+                );
+            }
+        };
+        scanner::scan_directory_with_progress(
+            &conn,
+            std::path::Path::new(&path),
+            disk_label.as_deref(),
+            &emit_progress,
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -235,6 +261,42 @@ fn resolve_dist_path() -> PathBuf {
     .unwrap_or_else(|| cwd.join("../dist"))
 }
 
+/// Ayarlar: uzaktan erişim token doğrulamasını açar/kapar.
+/// Yalnızca masaüstü IPC'sinden değiştirilebilir (ağ üzerinden değil).
+#[tauri::command]
+async fn set_remote_auth_enabled(
+    enabled: bool,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::set_setting(
+            &conn,
+            "remote_auth_enabled",
+            if enabled { "true" } else { "false" },
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Ayarlar: uzaktan erişim token'ını yeniden üretir ve döndürür.
+#[tauri::command]
+async fn regenerate_remote_token(
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        let token = uuid::Uuid::new_v4().to_string();
+        db::set_setting(&conn, "remote_token", &token)?;
+        Ok(token)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Native klasör seçme diyaloğu (ScanPanel "Gözat…" butonu)
@@ -274,7 +336,9 @@ pub fn run() {
             list_albums,
             album_tracks,
             artist_tracks,
-            open_media_batch
+            open_media_batch,
+            set_remote_auth_enabled,
+            regenerate_remote_token
         ])
         .run(tauri::generate_context!())
         .expect("Tauri uygulaması çalıştırılamadı");

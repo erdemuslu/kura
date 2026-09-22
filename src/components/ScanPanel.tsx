@@ -1,17 +1,45 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { browseDirectory, diskLabelFromPath, isRunningInTauri } from '../api/client';
 import { useScan } from '../hooks/useMedia';
+
+/** `scan-progress` event yükü (yalnızca masaüstünde gelir). */
+interface ScanProgress {
+  scanned_files: number;
+  indexed: number;
+}
 
 /** Dizin yolu girilip kütüphaneyi tarayan panel. */
 export default function ScanPanel() {
   const [path, setPath] = useState('');
   const [diskLabel, setDiskLabel] = useState('');
   const [browsing, setBrowsing] = useState(false);
+  const [progress, setProgress] = useState<ScanProgress | null>(null);
   const scan = useScan();
+
+  // Masaüstünde tarama ilerleme event'ini dinle (her 25 dosyada bir).
+  useEffect(() => {
+    if (!isRunningInTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    import('@tauri-apps/api/event')
+      .then(({ listen }) =>
+        listen<ScanProgress>('scan-progress', (e) => setProgress(e.payload)),
+      )
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!scan.isPending && path.trim()) {
+      setProgress(null);
       scan.mutate({ path: path.trim(), diskLabel: diskLabel.trim() || undefined });
     }
   };
@@ -72,6 +100,12 @@ export default function ScanPanel() {
         </button>
       </form>
 
+      {scan.isPending && progress && (
+        <p className="mt-2 text-sm text-sky-300">
+          Taranıyor… {progress.scanned_files} dosya tarandı, {progress.indexed}{' '}
+          indekslendi
+        </p>
+      )}
       {scan.isError && (
         <p className="mt-2 text-sm text-red-400">Hata: {String(scan.error)}</p>
       )}

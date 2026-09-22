@@ -3,6 +3,7 @@ import MediaGrid from './components/MediaGrid';
 import MusicView from './components/MusicView';
 import PlayerSelect from './components/PlayerSelect';
 import ScanPanel from './components/ScanPanel';
+import SettingsPanel from './components/SettingsPanel';
 import StorageBadge from './components/StorageBadge';
 import {
   ApiAuthError,
@@ -27,6 +28,7 @@ export default function App() {
   const [playingPath, setPlayingPath] = useState<string | null>(null);
   const [remote, setRemote] = useState<RemoteInfo | null>(null);
   const [tokenInput, setTokenInput] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
   // Müzik sekmesinde düz liste sorgusu atlanır; MusicView hiyerarşik
   // (sanatçı/albüm) sorgularını kendisi yapar.
@@ -60,6 +62,20 @@ export default function App() {
             {disks.data?.map((d) => <StorageBadge key={d.label} disk={d} />)}
             <div className="ml-auto flex items-center gap-3">
               <PlayerSelect value={player} onChange={setPlayer} />
+              {isRunningInTauri() && (
+                <button
+                  type="button"
+                  onClick={() => setShowSettings(!showSettings)}
+                  title="Ayarlar"
+                  className={`rounded-lg px-2.5 py-1.5 text-sm transition ${
+                    showSettings
+                      ? 'bg-sky-600 text-white'
+                      : 'bg-slate-800 text-slate-300 ring-1 ring-slate-700 hover:text-slate-100'
+                  }`}
+                >
+                  ⚙
+                </button>
+              )}
             </div>
           </div>
 
@@ -145,6 +161,18 @@ export default function App() {
               </code>
             </span>
           </section>
+        )}
+
+        {showSettings && remote && (
+          <SettingsPanel
+            remote={remote}
+            onAuthChange={(enabled) =>
+              setRemote((r) => (r ? { ...r, auth_enabled: enabled } : r))
+            }
+            onTokenChange={(token) =>
+              setRemote((r) => (r ? { ...r, token } : r))
+            }
+          />
         )}
 
         <ScanPanel />

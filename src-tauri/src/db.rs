@@ -153,7 +153,6 @@ pub fn get_setting(conn: &Connection, key: &str) -> Result<String, String> {
     .map_err(|e| e.to_string())
 }
 
-#[allow(dead_code)]
 pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
     conn.execute(
         "INSERT INTO app_settings (key, value) VALUES (?1, ?2)

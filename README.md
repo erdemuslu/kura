@@ -76,10 +76,10 @@ npm run tauri build         # release paketi
 - `/api/open` yalnızca **indekste kayıtlı** dosyaları başlatabilir.
 - `target_app` beyaz liste ile sınırlıdır (`system`, `VLC`, `IINA`,
   `Audirvana`, `foobar2000`, `QuickTime Player`).
-- Token doğrulaması varsayılan olarak **kapalıdır**. Açmak için
-  `app_settings` tablosunda `remote_auth_enabled` = `true` yapın; masaüstü
-  arayüzündeki "Uzaktan kumanda" bölümünde gösterilen token'ı mobil cihazda
-  bir kez girmeniz yeterlidir (`X-Auth-Token` başlığı ile gönderilir).
+- Token doğrulaması varsayılan olarak **kapalıdır**. Masaüstü uygulamasındaki ⚙
+  Ayarlar panelinden açıp/kapatabilir, token'ı görüntüleyip kopyalayabilir ve
+  yeniden üretebilirsiniz. Açıkken tarayıcıdan ilk girişte token sorulur
+  (`X-Auth-Token` başlığı ile gönderilir).
 
 ## Kullanım
 

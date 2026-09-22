@@ -92,6 +92,19 @@ pub fn scan_directory(
     root: &Path,
     disk_label: Option<&str>,
 ) -> Result<ScanSummary, String> {
+    // İlerleme bildirimi olmadan (REST tarayıcı kullanımı)
+    scan_directory_with_progress(conn, root, disk_label, &|_, _| {})
+}
+
+/// `scan_directory`'in ilerleme bildirimli varyantı:
+/// `progress(scanned, indexed)` her 25 medya dosyasında bir çağrılır
+/// (Tauri event'i olarak frontend'e yayınlanır).
+pub fn scan_directory_with_progress(
+    conn: &Connection,
+    root: &Path,
+    disk_label: Option<&str>,
+    progress: &dyn Fn(u64, u64),
+) -> Result<ScanSummary, String> {
     if !root.is_dir() {
         return Err(format!("Dizin bulunamadı: {}", root.display()));
     }
@@ -187,6 +200,11 @@ pub fn scan_directory(
         match db::upsert_media(conn, &item) {
             Ok(()) => summary.indexed += 1,
             Err(_) => summary.errors += 1,
+        }
+
+        // İlerlemeyi periyodik bildir (her tarama adımında event taşmasın)
+        if summary.scanned_files.is_multiple_of(25) {
+            progress(summary.scanned_files, summary.indexed);
         }
     }
     Ok(summary)
