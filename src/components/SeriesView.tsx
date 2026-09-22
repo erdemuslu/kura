@@ -13,7 +13,7 @@ import {
   type LaunchResult,
   type MediaItem,
 } from '../api/client';
-import { useEpisodes, useSeasons, useShows } from '../hooks/useMedia';
+import { useEpisodes, useMeta, useSeasons, useShows } from '../hooks/useMedia';
 
 type Level =
   | { kind: 'shows' }
@@ -47,6 +47,11 @@ export default function SeriesView({
     level.kind === 'shows' ? null : level.show,
     atEpisodes ? level.season : null,
     false,
+  );
+  // Dizi ana sayfası (sezon listesi) için zengin metadata
+  const showMeta = useMeta(
+    'series',
+    level.kind === 'shows' ? null : level.show,
   );
 
   const playEpisode = async (item: MediaItem) => {
@@ -194,6 +199,70 @@ export default function SeriesView({
             ))}
           </div>
         ))}
+
+      {/* Dizi detay başlığı (zengin metadata: poster, puan, türler, özet) */}
+      {level.kind !== 'shows' && (
+        <header className="flex flex-col gap-4 rounded-xl bg-slate-800/60 p-4 ring-1 ring-slate-700 sm:flex-row">
+          <div className="relative h-36 w-24 shrink-0 self-center overflow-hidden rounded-lg bg-gradient-to-br from-sky-600/40 to-cyan-900/60 ring-1 ring-slate-700 sm:self-start">
+            <span className="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/15">
+              {level.show.trim().slice(0, 1).toUpperCase() || '?'}
+            </span>
+            <img
+              src={posterUrlSeries(level.show)}
+              alt={level.show}
+              className="absolute inset-0 h-full w-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          </div>
+          <div className="min-w-0 flex-1 space-y-2">
+            <p className="text-lg font-semibold text-slate-100">{level.show}</p>
+            {(() => {
+              const m = showMeta.data;
+              const badges = [
+                m?.rating ? `★ ${m.rating.toFixed(1)}` : null,
+                m?.year,
+                m?.runtime ? `${m.runtime} dk/bölüm` : null,
+                m?.status,
+              ].filter((b): b is string => b !== null);
+              return (
+                <>
+                  {badges.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 text-[11px]">
+                      {badges.map((b) => (
+                        <span
+                          key={b}
+                          className="rounded-full bg-slate-700/70 px-2 py-0.5 text-slate-300"
+                        >
+                          {b}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {m?.genres && m.genres.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 text-[11px]">
+                      {m.genres.map((g) => (
+                        <span
+                          key={g}
+                          className="rounded-full bg-sky-500/15 px-2 py-0.5 text-sky-300"
+                        >
+                          {g}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {m?.overview && (
+                    <p className="line-clamp-4 text-sm leading-relaxed text-slate-300">
+                      {m.overview}
+                    </p>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </header>
+      )}
 
       {/* Sezon listesi */}
       {level.kind !== 'shows' &&

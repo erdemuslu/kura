@@ -70,6 +70,13 @@ pub struct CoverQuery {
     pub folder: Option<String>,
 }
 
+/// `/api/meta` — detay metadata sorgu parametreleri.
+#[derive(Deserialize)]
+pub struct MetaQuery {
+    pub kind: Option<String>,
+    pub title: Option<String>,
+}
+
 /// Film/dizi tarayıcı uçları için ortak query parametreleri.
 #[derive(Deserialize)]
 pub struct VideoQuery {
@@ -160,6 +167,7 @@ pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
         .route("/api/music/tracks", get(music_tracks))
         .route("/api/music/artist-tracks", get(music_artist_tracks))
         .route("/api/cover", get(cover))
+        .route("/api/meta", get(media_meta))
         .route("/api/movies", get(movies_route))
         .route("/api/movies/files", get(movie_files_route))
         .route("/api/series/shows", get(series_shows))
@@ -527,6 +535,42 @@ async fn cover_series(q: &CoverQuery, st: &ServerState) -> Response {
         }
     }
     not_found_response()
+}
+
+/// `/api/meta` — film/dizi detay metadata (özet, yıl, puan, türler, süre, durum).
+/// Zincir: önbellek → TMDB (key varsa) → key'siz fallback (film: iTunes,
+/// dizi: TVmaze). Kaynak bulunamazsa tüm alanları boş bir meta döner.
+async fn media_meta(
+    Query(q): Query<MetaQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<crate::meta::Meta>, (StatusCode, Json<ApiResponse>)> {
+    let (Some(kind), Some(title)) = (q.kind.clone(), q.title.clone()) else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message: "kind ve title parametreleri zorunlu".into(),
+            }),
+        ));
+    };
+    if kind != "movie" && kind != "series" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message: "kind yalnızca 'movie' veya 'series' olabilir".into(),
+            }),
+        ));
+    }
+
+    let tmdb = tmdb_key(&st).await;
+    let covers = crate::cover::covers_dir(&st.db_path);
+    let meta = if kind == "movie" {
+        crate::meta::fetch_movie_meta(&covers, tmdb.as_deref(), &title).await
+    } else {
+        crate::meta::fetch_series_meta(&covers, tmdb.as_deref(), &title).await
+    };
+    Ok(Json(meta))
 }
 
 /// TMDB API key'i ayarlardan okur (boş/ayarlanmamış → None).

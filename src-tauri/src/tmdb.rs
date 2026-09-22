@@ -11,7 +11,7 @@ const TMDB_TIMEOUT: Duration = Duration::from_secs(5);
 const IMAGE_BASE: &str = "https://image.tmdb.org/t/p/w500";
 
 /// Başlıktaki "(2020)" parantezinden yıl çıkarır (arama isabetini artırır).
-fn extract_year(title: &str) -> Option<String> {
+pub(crate) fn extract_year(title: &str) -> Option<String> {
     let chars: Vec<char> = title.chars().collect();
     if chars.len() < 6 {
         return None;
@@ -32,7 +32,7 @@ fn extract_year(title: &str) -> Option<String> {
 
 /// Arama başlığı: yalnız "(yyyy)" kalıpları soyulur
 /// ("Blade Runner 2049" gibi çifte anlamlı yıllar korunur).
-fn search_title(title: &str) -> String {
+pub(crate) fn search_title(title: &str) -> String {
     let chars: Vec<char> = title.chars().collect();
     let mut out = String::new();
     let mut i = 0;

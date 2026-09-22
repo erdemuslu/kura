@@ -72,6 +72,8 @@ npm run tauri build         # release paketi
 | `GET /api/cover?album=&artist=` | Albüm kapağı (gömülü/klasör → iTunes fallback) |
 | `GET /api/cover?kind=movie&title=&folder=` | Film posteri (klasör → TMDB → iTunes) |
 | `GET /api/cover?kind=series&title=` | Dizi posteri (TMDB → TVmaze → iTunes) |
+| `GET /api/meta?kind=movie&title=` | Film metadata (özet/yıl/puan/türler/süre: TMDB → iTunes) |
+| `GET /api/meta?kind=series&title=` | Dizi metadata (TMDB → TVmaze) |
 | `GET /api/movies?q=` | Filmler (klasör bazında gruplu: CD1/CD2 tek kart) |
 | `GET /api/movies/files?group=` | Bir film grubunun dosyaları |
 | `GET /api/series/shows?q=` | Diziler (sezon/bölüm sayılarıyla) |
@@ -104,7 +106,12 @@ npm run tauri build         # release paketi
    veya sezon "⋯" menüsünden playlist olarak oynatılabilir. Gizli dosyalar
    (macOS `._*` AppleDouble çöpleri, `.DS_Store`, Windows gizli
    attribute'luları) indekslenmez; her tarama öncesi indeksten de temizlenir.
-3. Kartlara tıklayarak seçili oynatıcıda başlatın.
+3. Kartlara tıklayın: **filmlerde detay sayfası açılır** (büyük poster,
+   özet, yıl, puan, türler, süre + dosya listesi); "▶ Oynat" düğmesi
+   çoklu dosyalı filmleri playlist olarak sırayla açar, dosya
+   satırlarından tek dosya da çalınabilir. **Dizilerde** dizi ana
+   sayfası aynı zengin başlığı (poster, puan, türler, özet, durum)
+   gösterir.
 4. Müzik sekmesi hiyerarşiktir: Albümler/Sanatçılar → sanatçı → albüm → şarkı
    listesi. Her kartın "⋯" menüsündeki **Tümünü Çal**, kartın tüm şarkılarını
    .m3u8 playlist olarak seçili oynatıcıya ekler. Tag'i olmayan dosyalarda

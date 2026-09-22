@@ -64,6 +64,16 @@ export interface SeasonSummary {
   episode_count: number;
 }
 
+/** Film/dizi detay metadata'sı (özet, yıl, puan, türler, süre, durum). */
+export interface MetaInfo {
+  overview: string | null;
+  year: string | null;
+  rating: number | null;
+  genres: string[];
+  runtime: number | null;
+  status: string | null;
+}
+
 /** Müzik tarayıcı: albüm özeti (gruplama sorgusundan döner). */
 export interface AlbumSummary {
   album: string;
@@ -352,6 +362,23 @@ export function posterUrlMovie(title: string, folderPath: string | null): string
 export function posterUrlSeries(showTitle: string): string {
   const base = isRunningInTauri() ? 'http://localhost:8080' : '';
   return `${base}/api/cover?${new URLSearchParams({ kind: 'series', title: showTitle })}`;
+}
+
+/** Detay metadata: özet/yıl/puan/türler/süre/durum (poster zinciriyle aynı kaynaklar). */
+async function getMeta(kind: 'movie' | 'series', title: string): Promise<MetaInfo> {
+  const base = isRunningInTauri() ? 'http://localhost:8080' : '';
+  const res = await restFetch(
+    `${base}/api/meta?${new URLSearchParams({ kind, title })}`,
+  );
+  return res.json();
+}
+
+export async function getMovieMeta(title: string): Promise<MetaInfo> {
+  return getMeta('movie', title);
+}
+
+export async function getSeriesMeta(showTitle: string): Promise<MetaInfo> {
+  return getMeta('series', showTitle);
 }
 
 /** Film tarayıcı: klasör bazında gruplanmış filmler. */

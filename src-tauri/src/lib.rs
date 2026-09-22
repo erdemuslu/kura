@@ -6,6 +6,7 @@
 
 mod cover;
 mod db;
+mod meta;
 mod runner;
 mod scanner;
 mod server;

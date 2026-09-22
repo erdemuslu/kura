@@ -6,8 +6,11 @@ import {
   getDisks,
   getEpisodes,
   getLibrary,
+  getMovieFiles,
+  getMovieMeta,
   getMovies,
   getSeasons,
+  getSeriesMeta,
   getShows,
   launchPlayer,
   startScan,
@@ -97,6 +100,25 @@ export function useEpisodes(
     queryKey: ['episodes', show, season, allSeasons],
     queryFn: () => getEpisodes(show!, allSeasons ? undefined : season ?? undefined),
     enabled: show !== null && (allSeasons || season !== null),
+  });
+}
+
+/** Detay metadata (özet, yıl, puan, türler, süre, durum) — talep anında çözümlenir. */
+export function useMeta(kind: 'movie' | 'series', title: string | null) {
+  return useQuery({
+    queryKey: ['meta', kind, title],
+    queryFn: () =>
+      kind === 'movie' ? getMovieMeta(title!) : getSeriesMeta(title!),
+    enabled: title !== null,
+  });
+}
+
+/** Bir film grubunun dosyaları (detay view dosya listesi için). */
+export function useMovieFiles(groupKey: string | null) {
+  return useQuery({
+    queryKey: ['movie-files', groupKey],
+    queryFn: () => getMovieFiles(groupKey!),
+    enabled: groupKey !== null,
   });
 }
 
