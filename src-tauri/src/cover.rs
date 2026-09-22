@@ -133,17 +133,33 @@ pub async fn fetch_itunes_cover(
     artist: &str,
     album: &str,
 ) -> Option<PathBuf> {
+    fetch_itunes(
+        covers_dir,
+        "album",
+        &format!("{artist} {album}"),
+        &format!("{artist}\u{1f}{album}"),
+    )
+    .await
+}
+
+/// iTunes Search API genel arama (key'siz). `entity`: album | movie | tvSeason.
+/// `cache_key` önbellek dosya adını belirler — türler arasında çakışmayı önler.
+pub async fn fetch_itunes(
+    covers_dir: &Path,
+    entity: &str,
+    term: &str,
+    cache_key: &str,
+) -> Option<PathBuf> {
     let client = reqwest::Client::builder()
         .timeout(ITUNES_TIMEOUT)
         .build()
         .ok()?;
 
-    let term = format!("{artist} {album}");
     let resp = client
         .get("https://itunes.apple.com/search")
         .query(&[
-            ("term", term.as_str()),
-            ("entity", "album"),
+            ("term", term),
+            ("entity", entity),
             ("limit", "1"),
         ])
         .send()
@@ -161,7 +177,39 @@ pub async fn fetch_itunes_cover(
 
     let bytes = client.get(&art600).send().await.ok()?.bytes().await.ok()?;
     let ext = if art600.contains(".png") { "png" } else { "jpg" };
-    let path = cache_file(covers_dir, artist, album, ext);
+    let path = cache_file_for_key(covers_dir, cache_key, ext);
+    std::fs::create_dir_all(covers_dir).ok()?;
+    std::fs::write(&path, &bytes).ok()?;
+    Some(path)
+}
+
+/// TVmaze API (key'siz, yüksek çözünürlük) — dizi posteri.
+/// `singlesearch/shows?q=` → `image.original`. Ağ hatasında sessizce None.
+pub async fn fetch_tvmaze_poster(covers_dir: &Path, show: &str) -> Option<PathBuf> {
+    let client = reqwest::Client::builder()
+        .timeout(ITUNES_TIMEOUT)
+        .build()
+        .ok()?;
+
+    let resp = client
+        .get("https://api.tvmaze.com/singlesearch/shows")
+        .query(&[("q", show)])
+        .send()
+        .await
+        .ok()?;
+    let body: serde_json::Value = resp.json().await.ok()?;
+    let img = body
+        .get("image")?
+        .get("original")?
+        .as_str()?
+        .to_string();
+    if img.is_empty() {
+        return None;
+    }
+
+    let bytes = client.get(&img).send().await.ok()?.bytes().await.ok()?;
+    let ext = if img.contains(".png") { "png" } else { "jpg" };
+    let path = cache_file_for_key(covers_dir, &format!("tvmaze\u{1f}{show}"), ext);
     std::fs::create_dir_all(covers_dir).ok()?;
     std::fs::write(&path, &bytes).ok()?;
     Some(path)

@@ -70,8 +70,8 @@ npm run tauri build         # release paketi
 | `GET /api/music/tracks?album=&artist=` | Bir albümün şarkıları (disk + track sırasına göre) |
 | `GET /api/music/artist-tracks?artist=` | Bir sanatçının tüm şarkıları |
 | `GET /api/cover?album=&artist=` | Albüm kapağı (gömülü/klasör → iTunes fallback) |
-| `GET /api/cover?kind=movie&title=&folder=` | Film posteri (klasör posteri → TMDB) |
-| `GET /api/cover?kind=series&title=` | Dizi posteri (TMDB) |
+| `GET /api/cover?kind=movie&title=&folder=` | Film posteri (klasör → TMDB → iTunes) |
+| `GET /api/cover?kind=series&title=` | Dizi posteri (TMDB → TVmaze → iTunes) |
 | `GET /api/movies?q=` | Filmler (klasör bazında gruplu: CD1/CD2 tek kart) |
 | `GET /api/movies/files?group=` | Bir film grubunun dosyaları |
 | `GET /api/series/shows?q=` | Diziler (sezon/bölüm sayılarıyla) |
@@ -114,10 +114,15 @@ npm run tauri build         # release paketi
    iTunes Search API (key'siz) zinciriyle çözülür; `<app-data>/covers/`
    altında önbelleklenir. Albüm detayında yıl, tür ve ses kalitesi
    (örn. "44.1 kHz • 16 bit") gösterilir.
-   Film/dizi posterleri: film klasöründeki `poster.jpg` (Plex tarzı) →
-   **TMDB**. TMDB için ücretsiz API key gerekir (themoviedb.org →
-   Ayarlar → API → API Key v3); key ⚙ Ayarlar panelinden girilir ve
-   yalnızca backend'de kullanılır. Key girilene kadar posterler
-   placeholder olarak görünür.
+   Film/dizi posterleri çözümleme zinciri:
+   - **Film:** klasör posteri (`poster.jpg`, Plex tarzı) → **TMDB** (key
+     varsa) → **iTunes** (key'siz `entity=movie`)
+   - **Dizi:** **TMDB** (key varsa) → **TVmaze** (key'siz, yüksek
+     çözünürlük) → **iTunes** (`entity=tvSeason`, key'siz)
+   TMDB key girilmediğinde bile posterler key'siz kaynaklardan gelir; key
+   girilirse en kaliteli kaynak öncelik kazanır. TMDB key: themoviedb.org →
+   Ayarlar → API → API Key v3; ⚙ Ayarlar panelinden girilir ve yalnızca
+   backend'de kullanılır. Tüm posterler `<app-data>/covers/` altında
+   önbelleklenir.
 5. Telefonunuzdan `http://<bilgisayar-ip>:8080` adresini açın — aynı arayüz
    uzaktan kumanda olarak çalışır.

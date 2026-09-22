@@ -466,7 +466,7 @@ async fn cover_movie(q: &CoverQuery, st: &ServerState) -> Response {
         }
     }
 
-    // 2) TMDB (key ayarlanmamışsa 404 → frontend placeholder'a düşer)
+    // 2) TMDB (key varsa — en kaliteli kaynak)
     if let Some(key) = tmdb_key(st).await {
         let covers = crate::cover::covers_dir(&st.db_path);
         if let Some(p) = crate::tmdb::fetch_movie_poster(&covers, &key, &title).await {
@@ -475,10 +475,25 @@ async fn cover_movie(q: &CoverQuery, st: &ServerState) -> Response {
             }
         }
     }
+
+    // 3) Key'siz fallback: iTunes (entity=movie)
+    let covers = crate::cover::covers_dir(&st.db_path);
+    if let Some(p) = crate::cover::fetch_itunes(
+        &covers,
+        "movie",
+        &title,
+        &format!("itunes-movie\u{1f}{title}"),
+    )
+    .await
+    {
+        if let Some((mime, bytes)) = read_image(&p) {
+            return image_response(mime, bytes);
+        }
+    }
     not_found_response()
 }
 
-/// Dizi posteri: TMDB.
+/// Dizi posteri: TMDB (key varsa) → TVmaze → iTunes tvSeason (key'siz).
 async fn cover_series(q: &CoverQuery, st: &ServerState) -> Response {
     let Some(title) = q.title.clone() else {
         return not_found_response();
@@ -489,6 +504,26 @@ async fn cover_series(q: &CoverQuery, st: &ServerState) -> Response {
             if let Some((mime, bytes)) = read_image(&p) {
                 return image_response(mime, bytes);
             }
+        }
+    }
+
+    // Key'siz zincir: TVmaze (yüksek çözünürlük) → iTunes tvSeason
+    let covers = crate::cover::covers_dir(&st.db_path);
+    if let Some(p) = crate::cover::fetch_tvmaze_poster(&covers, &title).await {
+        if let Some((mime, bytes)) = read_image(&p) {
+            return image_response(mime, bytes);
+        }
+    }
+    if let Some(p) = crate::cover::fetch_itunes(
+        &covers,
+        "tvSeason",
+        &title,
+        &format!("itunes-series\u{1f}{title}"),
+    )
+    .await
+    {
+        if let Some((mime, bytes)) = read_image(&p) {
+            return image_response(mime, bytes);
         }
     }
     not_found_response()
