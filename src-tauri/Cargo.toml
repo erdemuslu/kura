@@ -1,0 +1,28 @@
+[package]
+name = "local-media-hub"
+version = "0.1.0"
+description = "Yerel medya (film, dizi, müzik) yönetim ve uzaktan kumanda merkezi"
+edition = "2021"
+
+[lib]
+name = "local_media_hub_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+walkdir = "2.4"
+lofty = "0.20"
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+strip = true
+lto = true

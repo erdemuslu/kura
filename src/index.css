@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-slate-950 text-slate-100;
+}
+
+/* İnce karanlık tema kaydırma çubuğu */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme(--color-slate-700, #334155) transparent;
+}
