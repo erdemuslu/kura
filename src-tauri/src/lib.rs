@@ -4,6 +4,7 @@
 //! sunucusu (ağ girişi) aynı ortak servis katmanını paylaşır:
 //! `db` (SQLite), `scanner` (dizin tarama), `runner` (harici oynatıcı).
 
+mod cover;
 mod db;
 mod runner;
 mod scanner;
@@ -93,6 +94,7 @@ async fn scan_directory(
     let db_path = state.db_path.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db::open(&db_path)?;
+        let covers = crate::cover::covers_dir(&db_path);
         let emit_progress = {
             let app = app.clone();
             move |scanned: u64, indexed: u64| {
@@ -109,6 +111,7 @@ async fn scan_directory(
             &conn,
             std::path::Path::new(&path),
             disk_label.as_deref(),
+            &covers,
             &emit_progress,
         )
     })

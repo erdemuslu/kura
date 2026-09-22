@@ -69,6 +69,7 @@ npm run tauri build         # release paketi
 | `GET /api/music/albums?artist=&q=` | Albümler (sanatçıya göre filtrelenebilir) |
 | `GET /api/music/tracks?album=&artist=` | Bir albümün şarkıları (disk + track sırasına göre) |
 | `GET /api/music/artist-tracks?artist=` | Bir sanatçının tüm şarkıları |
+| `GET /api/cover?album=&artist=` | Albüm kapağı (gömülü/klasör → iTunes fallback) |
 | `POST /api/open-batch` `{ file_paths, target_app, playlist_title }` | "Tümünü Çal" — .m3u8 playlist olarak oynatıcıya ekler |
 
 ### Güvenlik notları
@@ -95,5 +96,9 @@ npm run tauri build         # release paketi
    .m3u8 playlist olarak seçili oynatıcıya ekler. Tag'i olmayan dosyalarda
    sanatçı/albüm bilgisi klasör yapısından (`Sanatçı/Albüm/01 - Sarkı.mp3`)
    çıkarılır.
+   Albüm kapakları: gömülü kapak (ID3/FLAC) → klasördeki `cover.jpg` →
+   iTunes Search API (key'siz) zinciriyle çözülür; `<app-data>/covers/`
+   altında önbelleklenir. Albüm detayında yıl, tür ve ses kalitesi
+   (örn. "44.1 kHz • 16 bit") gösterilir.
 5. Telefonunuzdan `http://<bilgisayar-ip>:8080` adresini açın — aynı arayüz
    uzaktan kumanda olarak çalışır.

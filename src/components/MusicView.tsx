@@ -10,6 +10,7 @@
  */
 import { useState } from 'react';
 import {
+  coverUrl,
   getAlbumTracks,
   getArtistTracks,
   launchPlayer,
@@ -21,6 +22,17 @@ import {
 import { useAlbums, useAlbumTracks, useArtists } from '../hooks/useMedia';
 import { formatDuration } from './MediaGrid';
 
+/** Parça için ses kalitesi rozeti metni: "44.1 kHz • 16 bit". */
+function formatQuality(item: MediaItem): string {
+  const parts: string[] = [];
+  if (item.sample_rate) {
+    const khz = item.sample_rate / 1000;
+    parts.push(`${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`);
+  }
+  if (item.bit_depth) parts.push(`${item.bit_depth} bit`);
+  return parts.join(' • ');
+}
+
 type Level =
   | { kind: 'top'; view: 'albums' | 'artists' }
   | { kind: 'artist'; artist: string }
@@ -30,16 +42,19 @@ interface MusicCardProps {
   title: string;
   subtitle: string;
   meta: string;
+  cover: string | null;
   onClick: () => void;
   onPlayAll: () => void;
   playAllLoading: boolean;
 }
 
-/** Albüm/sanatçı kartı — köşede "⋯" menüsü ("Tümünü Çal"). */
+/** Albüm/sanatçı kartı — kapak imajı + köşede "⋯" menüsü ("Tümünü Çal").
+ *  Kapak yüklenemezse (404) onError ile gizlenir, gradient placeholder kalır. */
 function MusicCard({
   title,
   subtitle,
   meta,
+  cover,
   onClick,
   onPlayAll,
   playAllLoading,
@@ -54,6 +69,17 @@ function MusicCard({
         <span className="select-none text-4xl font-bold text-white/15 group-hover:text-white/25">
           {title.trim().slice(0, 1).toUpperCase() || '?'}
         </span>
+        {cover && (
+          <img
+            src={cover}
+            alt={title}
+            loading="lazy"
+            className="absolute inset-0 h-full w-full object-cover"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        )}
         <div className="absolute right-2 top-2" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
@@ -219,6 +245,7 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
                   meta={`${a.track_count} şarkı${
                     a.total_duration ? ` • ${formatDuration(a.total_duration)}` : ''
                   }`}
+                  cover={a.has_cover ? coverUrl(a.album, a.artist) : null}
                   onClick={() => setLevel({ kind: 'album', album: a.album, artist: a.artist })}
                   onPlayAll={() => playAll(label, () => getAlbumTracks(a.album, a.artist))}
                   playAllLoading={batchLabel === label}
@@ -244,6 +271,7 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
                 title={a.artist}
                 subtitle={`${a.album_count} albüm`}
                 meta={`${a.track_count} şarkı`}
+                cover={null}
                 onClick={() => setLevel({ kind: 'artist', artist: a.artist })}
                 onPlayAll={() => playAll(a.artist, () => getArtistTracks(a.artist))}
                 playAllLoading={batchLabel === a.artist}
@@ -255,26 +283,57 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
       {/* Şarkı listesi (albüm seviyesi) */}
       {level.kind === 'album' && (
         <section className="overflow-hidden rounded-xl ring-1 ring-slate-700">
-          <header className="flex items-center gap-3 bg-slate-800/60 px-4 py-3">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-100">{level.album}</p>
-              <p className="truncate text-xs text-slate-400">
-                {level.artist}
-                {tracks.data ? ` • ${tracks.data.length} şarkı` : ''}
-              </p>
+          <header className="flex flex-col gap-4 bg-slate-800/60 p-4 sm:flex-row">
+            {/* Büyük albüm kapağı — yüklenemezse gradient placeholder kalır */}
+            <div className="relative h-36 w-36 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-emerald-600/40 to-teal-900/60 ring-1 ring-slate-700">
+              <span className="absolute inset-0 flex items-center justify-center text-3xl font-bold text-white/15">
+                {level.album.trim().slice(0, 1).toUpperCase() || '?'}
+              </span>
+              <img
+                src={coverUrl(level.album, level.artist)}
+                alt={level.album}
+                className="absolute inset-0 h-full w-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                playAll(`${level.artist} — ${level.album}`, () =>
-                  Promise.resolve(tracks.data ?? []),
-                )
-              }
-              disabled={batchLabel !== null || !tracks.data || tracks.data.length === 0}
-              className="shrink-0 rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {batchLabel ? 'Ekleniyor…' : '▶ Tümünü Çal'}
-            </button>
+            <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="truncate text-base font-semibold text-slate-100">
+                  {level.album}
+                </p>
+                <p className="truncate text-sm text-slate-400">{level.artist}</p>
+                <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-xs text-slate-400">
+                  {(() => {
+                    const first = tracks.data?.[0];
+                    const total = (tracks.data ?? []).reduce(
+                      (sum, t) => sum + (t.duration ?? 0),
+                      0,
+                    );
+                    const parts = [
+                      first?.year ? String(first.year) : null,
+                      first?.genre ?? null,
+                      tracks.data ? `${tracks.data.length} şarkı` : null,
+                      total > 0 ? formatDuration(total) : null,
+                    ].filter(Boolean);
+                    return parts.length > 0 ? <span>{parts.join(' • ')}</span> : null;
+                  })()}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  playAll(`${level.artist} — ${level.album}`, () =>
+                    Promise.resolve(tracks.data ?? []),
+                  )
+                }
+                disabled={batchLabel !== null || !tracks.data || tracks.data.length === 0}
+                className="shrink-0 self-end rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {batchLabel ? 'Ekleniyor…' : '▶ Tümünü Çal'}
+              </button>
+            </div>
           </header>
           {tracks.isLoading ? (
             <p className="px-4 py-6 text-sm text-slate-400">Yüklenıyor…</p>
@@ -294,6 +353,14 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
                     {t.track_number ?? i + 1}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-slate-100">{t.title}</span>
+                  {(() => {
+                    const q = formatQuality(t);
+                    return q ? (
+                      <span className="hidden shrink-0 rounded bg-slate-700/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 md:inline">
+                        {q}
+                      </span>
+                    ) : null;
+                  })()}
                   {t.year ? (
                     <span className="hidden shrink-0 text-xs text-slate-500 sm:inline">
                       {t.year}

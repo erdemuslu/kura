@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS media_items (
     track_number INTEGER,
     disc_number INTEGER,
     year INTEGER,
+    genre TEXT,
+    sample_rate INTEGER,                -- Hz (44100, 48000, …)
+    bit_depth INTEGER,                 -- 16, 24, …
+    channels INTEGER,                  -- 1 = mono, 2 = stereo
     cover_image_path TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -50,6 +54,10 @@ pub struct MediaItem {
     pub track_number: Option<i64>,
     pub disc_number: Option<i64>,
     pub year: Option<i64>,
+    pub genre: Option<String>,
+    pub sample_rate: Option<i64>,
+    pub bit_depth: Option<i64>,
+    pub channels: Option<i64>,
     pub cover_image_path: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -69,6 +77,11 @@ pub struct NewMediaItem {
     pub track_number: Option<i64>,
     pub disc_number: Option<i64>,
     pub year: Option<i64>,
+    pub genre: Option<String>,
+    pub sample_rate: Option<i64>,
+    pub bit_depth: Option<i64>,
+    pub channels: Option<i64>,
+    pub cover_image_path: Option<String>,
 }
 
 /// Müzik tarayıcı: etiketi olmayan dosyalar için gösterilen adlar.
@@ -88,6 +101,7 @@ pub struct AlbumSummary {
     pub artist: String,
     pub track_count: i64,
     pub total_duration: Option<i64>,
+    pub has_cover: bool,
 }
 
 pub fn open(db_path: &Path) -> Result<Connection, String> {
@@ -123,6 +137,10 @@ fn ensure_columns(conn: &Connection) -> Result<(), String> {
         ("track_number", "INTEGER"),
         ("disc_number", "INTEGER"),
         ("year", "INTEGER"),
+        ("genre", "TEXT"),
+        ("sample_rate", "INTEGER"),
+        ("bit_depth", "INTEGER"),
+        ("channels", "INTEGER"),
     ] {
         if !existing.iter().any(|c| c == col) {
             conn.execute(
@@ -198,9 +216,11 @@ pub fn cleanup_hidden_entries(conn: &Connection) -> Result<u64, String> {
 pub fn upsert_media(conn: &Connection, item: &NewMediaItem) -> Result<(), String> {
     conn.execute(
         "INSERT INTO media_items
-             (id, title, artist, album, media_type, file_path, file_size, disk_label, format,
-              duration, track_number, disc_number, year)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             (id, title, artist, album, media_type, file_path, file_size, disk_label,
+              format, duration, track_number, disc_number, year, genre, sample_rate,
+              bit_depth, channels, cover_image_path)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+                 ?16, ?17, ?18)
          ON CONFLICT(file_path) DO UPDATE SET
              title = excluded.title,
              artist = excluded.artist,
@@ -213,6 +233,11 @@ pub fn upsert_media(conn: &Connection, item: &NewMediaItem) -> Result<(), String
              track_number = excluded.track_number,
              disc_number = excluded.disc_number,
              year = excluded.year,
+             genre = excluded.genre,
+             sample_rate = excluded.sample_rate,
+             bit_depth = excluded.bit_depth,
+             channels = excluded.channels,
+             cover_image_path = excluded.cover_image_path,
              updated_at = CURRENT_TIMESTAMP",
         params![
             Uuid::new_v4().to_string(),
@@ -228,6 +253,11 @@ pub fn upsert_media(conn: &Connection, item: &NewMediaItem) -> Result<(), String
             item.track_number,
             item.disc_number,
             item.year,
+            item.genre,
+            item.sample_rate,
+            item.bit_depth,
+            item.channels,
+            item.cover_image_path,
         ],
     )
     .map(|_| ())
@@ -282,7 +312,8 @@ pub fn query_library(
 /// Ortak kolon listesi — SELECT ve satır eşlemesinde aynı sırada kullanılır.
 const MEDIA_COLS: &str = "id, title, artist, album, media_type, file_path, file_size,
                           disk_label, format, duration, track_number, disc_number, year,
-                          cover_image_path, created_at, updated_at";
+                          genre, sample_rate, bit_depth, channels, cover_image_path,
+                          created_at, updated_at";
 
 fn map_media_item(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
     Ok(MediaItem {
@@ -299,9 +330,13 @@ fn map_media_item(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
         track_number: row.get(10)?,
         disc_number: row.get(11)?,
         year: row.get(12)?,
-        cover_image_path: row.get(13)?,
-        created_at: row.get(14)?,
-        updated_at: row.get(15)?,
+        genre: row.get(13)?,
+        sample_rate: row.get(14)?,
+        bit_depth: row.get(15)?,
+        channels: row.get(16)?,
+        cover_image_path: row.get(17)?,
+        created_at: row.get(18)?,
+        updated_at: row.get(19)?,
     })
 }
 
@@ -351,11 +386,12 @@ pub fn list_albums(
     artist: Option<&str>,
     query: Option<&str>,
 ) -> Result<Vec<AlbumSummary>, String> {
-    let sql = "SELECT eff_album, eff_artist, COUNT(*), SUM(duration)
+    let sql = "SELECT eff_album, eff_artist, COUNT(*), SUM(duration),
+                      MAX(CASE WHEN cover_image_path IS NOT NULL THEN 1 ELSE 0 END)
                FROM (
                    SELECT COALESCE(NULLIF(album, ''), :unknown_album) AS eff_album,
                           COALESCE(NULLIF(artist, ''), :unknown_artist) AS eff_artist,
-                          duration
+                          duration, cover_image_path
                    FROM media_items
                    WHERE media_type = 'music'
                      AND (:artist IS NULL
@@ -380,6 +416,7 @@ pub fn list_albums(
                     artist: row.get(1)?,
                     track_count: row.get(2)?,
                     total_duration: row.get(3)?,
+                    has_cover: row.get::<_, i64>(4)? != 0,
                 })
             },
         )
@@ -448,5 +485,58 @@ pub fn artist_tracks(conn: &Connection, artist: &str) -> Result<Vec<MediaItem>, 
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(tracks)
+}
+
+/// Bir albümün kayıtlı kapak yolunu döndürür (yoksa None).
+/// `/api/cover` ucu buradan başlar.
+pub fn cover_path_for_album(
+    conn: &Connection,
+    album: &str,
+    artist: &str,
+) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT cover_image_path FROM media_items
+         WHERE media_type = 'music' AND cover_image_path IS NOT NULL
+           AND COALESCE(NULLIF(album, ''), :unknown_album) = :album
+           AND COALESCE(NULLIF(artist, ''), :unknown_artist) = :artist
+         LIMIT 1",
+        named_params! {
+            ":unknown_album": UNKNOWN_ALBUM,
+            ":unknown_artist": UNKNOWN_ARTIST,
+            ":album": album,
+            ":artist": artist,
+        },
+        |row| row.get(0),
+    )
+    .map(Some)
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        e => Err(e.to_string()),
+    })
+}
+
+/// Albümün tüm parçalarına kapak yolunu yazar (iTunes fallback sonrası).
+pub fn set_album_cover(
+    conn: &Connection,
+    album: &str,
+    artist: &str,
+    cover_path: &str,
+) -> Result<u64, String> {
+    conn.execute(
+        "UPDATE media_items
+         SET cover_image_path = :path, updated_at = CURRENT_TIMESTAMP
+         WHERE media_type = 'music'
+           AND COALESCE(NULLIF(album, ''), :unknown_album) = :album
+           AND COALESCE(NULLIF(artist, ''), :unknown_artist) = :artist",
+        named_params! {
+            ":unknown_album": UNKNOWN_ALBUM,
+            ":unknown_artist": UNKNOWN_ARTIST,
+            ":album": album,
+            ":artist": artist,
+            ":path": cover_path,
+        },
+    )
+    .map(|n| n as u64)
+    .map_err(|e| e.to_string())
 }
 

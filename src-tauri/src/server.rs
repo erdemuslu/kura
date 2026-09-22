@@ -10,9 +10,11 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, path::PathBuf};
+use std::{net::SocketAddr, path::{Path, PathBuf}};
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
 
 #[derive(Clone)]
 pub struct ServerState {
@@ -54,6 +56,13 @@ pub struct MusicQuery {
     pub q: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+}
+
+/// `/api/cover` — albüm kapağı sorgu parametreleri.
+#[derive(Deserialize)]
+pub struct CoverQuery {
+    pub album: String,
+    pub artist: String,
 }
 
 #[derive(Serialize)]
@@ -136,6 +145,7 @@ pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
         .route("/api/music/albums", get(music_albums))
         .route("/api/music/tracks", get(music_tracks))
         .route("/api/music/artist-tracks", get(music_artist_tracks))
+        .route("/api/cover", get(cover))
         .route("/api/open-batch", post(open_batch))
         .fallback_service(ServeDir::new(static_root).append_index_html_on_directories(true))
         .layer(CorsLayer::permissive())
@@ -212,7 +222,8 @@ async fn scan(
     let disk_label = payload.disk_label.clone();
     let summary = tokio::task::spawn_blocking(move || {
         let conn = db::open(&db_path)?;
-        scanner::scan_directory(&conn, std::path::Path::new(&path), disk_label.as_deref())
+        let covers = crate::cover::covers_dir(&db_path);
+        scanner::scan_directory(&conn, std::path::Path::new(&path), disk_label.as_deref(), &covers)
     })
     .await
     .map_err(|e| internal_error(e.to_string()))?
@@ -324,6 +335,84 @@ async fn music_tracks(
     .map_err(|e| internal_error(e.to_string()))?
     .map_err(internal_error)?;
     Ok(Json(tracks))
+}
+
+/// Albüm kapağı çözümleme zinciri:
+///   1) DB'de kayıtlı kapak yolu (taramada gömülü/klasör kapağı yazılır)
+///   2) iTunes Search API (key'siz) — bulunursa diske önbelleklenir ve
+///      DB'ye işlenir; sonraki istekler doğrudan DB'den gelir.
+fn read_image(path: &Path) -> Option<(&'static str, Vec<u8>)> {
+    let bytes = std::fs::read(path).ok()?;
+    let mime = match path.extension().and_then(|e| e.to_str()) {
+        Some("png") => "image/png",
+        Some("gif") => "image/gif",
+        Some("bmp") => "image/bmp",
+        _ => "image/jpeg",
+    };
+    Some((mime, bytes))
+}
+
+fn image_response(mime: &'static str, bytes: Vec<u8>) -> Response {
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        bytes,
+    )
+        .into_response()
+}
+
+async fn cover(
+    Query(q): Query<CoverQuery>,
+    State(st): State<ServerState>,
+) -> Response {
+    // 1) DB'de kayıtlı kapak yolu
+    let db_path = st.db_path.clone();
+    let (album, artist) = (q.album.clone(), q.artist.clone());
+    let known: Option<String> = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::cover_path_for_album(&conn, &album, &artist)
+    })
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .flatten();
+
+    if let Some(path) = known {
+        if let Some((mime, bytes)) = read_image(Path::new(&path)) {
+            return image_response(mime, bytes);
+        }
+    }
+
+    // 2) iTunes fallback — "Bilinmeyen Albüm" için anlamsız, atla.
+    if q.album == db::UNKNOWN_ALBUM {
+        return (StatusCode::NOT_FOUND, "").into_response();
+    }
+
+    let covers = crate::cover::covers_dir(&st.db_path);
+    if let Some(cover_path) = crate::cover::fetch_itunes_cover(&covers, &q.artist, &q.album).await
+    {
+        // Önbelleğe alındı → DB'ye de işle (sonraki istekler DB'den döner)
+        let db_path = st.db_path.clone();
+        let (album, artist, path_str) = (
+            q.album.clone(),
+            q.artist.clone(),
+            cover_path.to_string_lossy().to_string(),
+        );
+        let _ = tokio::task::spawn_blocking(move || {
+            let conn = db::open(&db_path)?;
+            db::set_album_cover(&conn, &album, &artist, &path_str)
+        })
+        .await;
+
+        if let Some((mime, bytes)) = read_image(&cover_path) {
+            return image_response(mime, bytes);
+        }
+    }
+
+    (StatusCode::NOT_FOUND, "").into_response()
 }
 
 /// Bir sanatçının tüm şarkıları ("Tümünü Çal" için; album+artist'ten bağımsız).

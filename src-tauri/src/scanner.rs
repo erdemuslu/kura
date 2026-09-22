@@ -121,9 +121,10 @@ pub fn scan_directory(
     conn: &Connection,
     root: &Path,
     disk_label: Option<&str>,
+    covers_dir: &Path,
 ) -> Result<ScanSummary, String> {
     // İlerleme bildirimi olmadan (REST tarayıcı kullanımı)
-    scan_directory_with_progress(conn, root, disk_label, &|_, _| {})
+    scan_directory_with_progress(conn, root, disk_label, covers_dir, &|_, _| {})
 }
 
 /// `scan_directory`'in ilerleme bildirimli varyantı:
@@ -133,6 +134,7 @@ pub fn scan_directory_with_progress(
     conn: &Connection,
     root: &Path,
     disk_label: Option<&str>,
+    covers_dir: &Path,
     progress: &dyn Fn(u64, u64),
 ) -> Result<ScanSummary, String> {
     if !root.is_dir() {
@@ -151,6 +153,9 @@ pub fn scan_directory_with_progress(
         cleaned,
         disk_label: label,
     };
+    // Albüm bazında çözülen kapak yolu — aynı albümün tüm parçaları paylaşır
+    let mut album_covers: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     for entry in WalkDir::new(root)
         .min_depth(1)
@@ -202,6 +207,37 @@ pub fn scan_directory_with_progress(
                 if m.track_number.is_none() {
                     m.track_number = track_from_stem(&stem);
                 }
+                // Kapak: gömülü (önbelleğe yazılır) → klasör kapağı → boş.
+                // (iTunes fallback REST `/api/cover` talebiyle çalışır.)
+                let cover_key = format!(
+                    "{}\u{1f}{}",
+                    m.artist.as_deref().unwrap_or(""),
+                    m.album.as_deref().unwrap_or("")
+                );
+                let cover_path = match album_covers.get(&cover_key) {
+                    Some(p) => Some(p.clone()),
+                    None => {
+                        let resolved = m
+                            .cover
+                            .as_ref()
+                            .and_then(|(mime, data)| {
+                                crate::cover::save_embedded(
+                                    covers_dir,
+                                    m.artist.as_deref().unwrap_or(""),
+                                    m.album.as_deref().unwrap_or(""),
+                                    mime,
+                                    data,
+                                )
+                                .ok()
+                            })
+                            .or_else(|| crate::cover::folder_cover(path))
+                            .map(|p| p.to_string_lossy().to_string());
+                        if let Some(ref p) = resolved {
+                            album_covers.insert(cover_key, p.clone());
+                        }
+                        resolved
+                    }
+                };
                 NewMediaItem {
                     title: m.title,
                     artist: m.artist,
@@ -215,6 +251,11 @@ pub fn scan_directory_with_progress(
                     track_number: m.track_number,
                     disc_number: m.disc_number,
                     year: m.year,
+                    genre: m.genre,
+                    sample_rate: m.sample_rate,
+                    bit_depth: m.bit_depth,
+                    channels: m.channels,
+                    cover_image_path: cover_path,
                 }
             }
             MediaKind::Video => NewMediaItem {
@@ -234,6 +275,11 @@ pub fn scan_directory_with_progress(
                 track_number: None,
                 disc_number: None,
                 year: None,
+                genre: None,
+                sample_rate: None,
+                bit_depth: None,
+                channels: None,
+                cover_image_path: None,
             },
         };
 
@@ -259,6 +305,12 @@ struct AudioMeta {
     track_number: Option<i64>,
     disc_number: Option<i64>,
     year: Option<i64>,
+    genre: Option<String>,
+    sample_rate: Option<i64>,
+    bit_depth: Option<i64>,
+    channels: Option<i64>,
+    /// Gömülü kapak: (mime, imaj byte'ları)
+    cover: Option<(String, Vec<u8>)>,
 }
 
 /// lofty ile ID3/FLAC metadata okur; hata olursa dosya adına geri düşer.
@@ -266,11 +318,28 @@ struct AudioMeta {
 fn read_audio_metadata(path: &Path, fallback_title: &str) -> AudioMeta {
     // AudioFile (properties), TaggedFileExt (primary_tag), Accessor (title/artist/album/...)
     use lofty::prelude::*;
+    use lofty::picture::PictureType;
 
     match lofty::read_from_path(path) {
         Ok(tagged_file) => {
-            let duration_secs = tagged_file.properties().duration().as_secs();
+            let props = tagged_file.properties();
+            let duration_secs = props.duration().as_secs();
             let tag = tagged_file.primary_tag();
+            // Kapak: öncelik ön kapak (CoverFront), yoksa ilk gömülü resim
+            let cover = tag.and_then(|t| {
+                t.pictures()
+                    .iter()
+                    .find(|p| p.pic_type() == PictureType::CoverFront)
+                    .or_else(|| t.pictures().first())
+                    .map(|p| {
+                        (
+                            p.mime_type()
+                                .map(|m| m.as_str().to_string())
+                                .unwrap_or_else(|| "image/jpeg".into()),
+                            p.data().to_vec(),
+                        )
+                    })
+            });
             AudioMeta {
                 title: tag
                     .and_then(|t| t.title().map(|s| s.to_string()))
@@ -285,6 +354,11 @@ fn read_audio_metadata(path: &Path, fallback_title: &str) -> AudioMeta {
                 track_number: tag.and_then(|t| t.track()).map(|n| n as i64),
                 disc_number: tag.and_then(|t| t.disk()).map(|n| n as i64),
                 year: tag.and_then(|t| t.year()).map(|n| n as i64),
+                genre: tag.and_then(|t| t.genre().map(|s| s.to_string())),
+                sample_rate: props.sample_rate().map(|v| v as i64),
+                bit_depth: props.bit_depth().map(|v| v as i64),
+                channels: props.channels().map(|v| v as i64),
+                cover,
             }
         }
         Err(_) => AudioMeta {
@@ -295,6 +369,11 @@ fn read_audio_metadata(path: &Path, fallback_title: &str) -> AudioMeta {
             track_number: None,
             disc_number: None,
             year: None,
+            genre: None,
+            sample_rate: None,
+            bit_depth: None,
+            channels: None,
+            cover: None,
         },
     }
 }

@@ -20,6 +20,10 @@ export interface MediaItem {
   track_number: number | null;
   disc_number: number | null;
   year: number | null;
+  genre: string | null;
+  sample_rate: number | null;
+  bit_depth: number | null;
+  channels: number | null;
   cover_image_path: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -38,6 +42,7 @@ export interface AlbumSummary {
   artist: string;
   track_count: number;
   total_duration: number | null;
+  has_cover: boolean;
 }
 
 export interface DiskInfo {
@@ -292,6 +297,16 @@ export async function launchPlayerBatch(
     }),
   });
   return res.json();
+}
+
+/**
+ * Albüm kapağı URL'si — masaüstünde de uzaktan da aynı Axum sunucusu
+ * üzerinden servis edilir (tek kod yolu; asset-protocol gerekmez).
+ * Yükleme hatasında (404) çağıran taraf placeholder'a düşer.
+ */
+export function coverUrl(album: string, artist: string): string {
+  const base = isRunningInTauri() ? 'http://localhost:8080' : '';
+  return `${base}/api/cover?${new URLSearchParams({ album, artist }).toString()}`;
 }
 
 /* Ayarlar — yalnızca masaüstü IPC (ayarlar ağ üzerinden değiştirilemez). */
