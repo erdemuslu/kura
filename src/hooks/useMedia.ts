@@ -4,7 +4,11 @@ import {
   getAlbumTracks,
   getArtists,
   getDisks,
+  getEpisodes,
   getLibrary,
+  getMovies,
+  getSeasons,
+  getShows,
   launchPlayer,
   startScan,
   type MediaType,
@@ -56,6 +60,43 @@ export function useAlbumTracks(album: string, artist: string, enabled: boolean) 
     queryKey: ['album-tracks', album, artist],
     queryFn: () => getAlbumTracks(album, artist),
     enabled,
+  });
+}
+
+/** Film tarayıcı sorguları. */
+export function useMovies(query: string) {
+  return useQuery({
+    queryKey: ['movies', query],
+    queryFn: () => getMovies(query),
+  });
+}
+
+/** Dizi tarayıcı sorguları. */
+export function useShows(query: string) {
+  return useQuery({
+    queryKey: ['shows', query],
+    queryFn: () => getShows(query),
+  });
+}
+
+export function useSeasons(show: string | null) {
+  return useQuery({
+    queryKey: ['seasons', show],
+    queryFn: () => getSeasons(show!),
+    enabled: show !== null,
+  });
+}
+
+export function useEpisodes(
+  show: string | null,
+  season: number | null,
+  /** season null ise tüm sezonların bölümleri */
+  allSeasons: boolean,
+) {
+  return useQuery({
+    queryKey: ['episodes', show, season, allSeasons],
+    queryFn: () => getEpisodes(show!, allSeasons ? undefined : season ?? undefined),
+    enabled: show !== null && (allSeasons || season !== null),
   });
 }
 

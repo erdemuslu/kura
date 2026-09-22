@@ -20,18 +20,7 @@ import {
   type MediaItem,
 } from '../api/client';
 import { useAlbums, useAlbumTracks, useArtists } from '../hooks/useMedia';
-import { formatDuration } from './MediaGrid';
-
-/** Parça için ses kalitesi rozeti metni: "44.1 kHz • 16 bit". */
-function formatQuality(item: MediaItem): string {
-  const parts: string[] = [];
-  if (item.sample_rate) {
-    const khz = item.sample_rate / 1000;
-    parts.push(`${Number.isInteger(khz) ? khz : khz.toFixed(1)} kHz`);
-  }
-  if (item.bit_depth) parts.push(`${item.bit_depth} bit`);
-  return parts.join(' • ');
-}
+import { formatDuration, formatQuality } from '../lib/format';
 
 type Level =
   | { kind: 'top'; view: 'albums' | 'artists' }

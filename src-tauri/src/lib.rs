@@ -181,6 +181,82 @@ async fn artist_tracks(
     .map_err(|e| e.to_string())?
 }
 
+/// Film tarayıcı: klasör bazında gruplanmış filmler.
+#[tauri::command]
+async fn list_movies(
+    query: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<db::MovieGroup>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_movies(&conn, query.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Film tarayıcı: bir film grubunun dosyaları (oynatma için).
+#[tauri::command]
+async fn movie_files(
+    group_key: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<db::MediaItem>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::movie_files(&conn, &group_key)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Dizi tarayıcı: diziler (sezon/bölüm sayılarıyla).
+#[tauri::command]
+async fn list_shows(
+    query: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<db::ShowSummary>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_shows(&conn, query.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Dizi tarayıcı: bir dizinin sezonları.
+#[tauri::command]
+async fn list_seasons(
+    show: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<db::SeasonSummary>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_seasons(&conn, &show)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Dizi tarayıcı: bölümler. `season` yoksa tüm sezonlar ("Tümünü Çal" için).
+#[tauri::command]
+async fn list_episodes(
+    show: String,
+    season: Option<i64>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<db::MediaItem>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_episodes(&conn, &show, season)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Birden çok dosyayı .m3u8 playlist olarak oynatıcıya ekler ("Tümünü Çal").
 /// Yalnızca indekste kayıtlı dosyalar playlist'e alınır (güvenlik).
 #[tauri::command]
@@ -341,7 +417,12 @@ pub fn run() {
             artist_tracks,
             open_media_batch,
             set_remote_auth_enabled,
-            regenerate_remote_token
+            regenerate_remote_token,
+            list_movies,
+            movie_files,
+            list_shows,
+            list_seasons,
+            list_episodes
         ])
         .run(tauri::generate_context!())
         .expect("Tauri uygulaması çalıştırılamadı");

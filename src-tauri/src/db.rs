@@ -22,6 +22,11 @@ CREATE TABLE IF NOT EXISTS media_items (
     track_number INTEGER,
     disc_number INTEGER,
     year INTEGER,
+    show_title TEXT,                   -- dizi adı (hiyerarşi kökü)
+    season INTEGER,
+    episode INTEGER,
+    folder_path TEXT,                  -- film/dizi dosyasının üst klasörü
+    subtitle_count INTEGER NOT NULL DEFAULT 0,
     genre TEXT,
     sample_rate INTEGER,                -- Hz (44100, 48000, …)
     bit_depth INTEGER,                 -- 16, 24, …
@@ -54,6 +59,11 @@ pub struct MediaItem {
     pub track_number: Option<i64>,
     pub disc_number: Option<i64>,
     pub year: Option<i64>,
+    pub show_title: Option<String>,
+    pub season: Option<i64>,
+    pub episode: Option<i64>,
+    pub folder_path: Option<String>,
+    pub subtitle_count: i64,
     pub genre: Option<String>,
     pub sample_rate: Option<i64>,
     pub bit_depth: Option<i64>,
@@ -77,6 +87,11 @@ pub struct NewMediaItem {
     pub track_number: Option<i64>,
     pub disc_number: Option<i64>,
     pub year: Option<i64>,
+    pub show_title: Option<String>,
+    pub season: Option<i64>,
+    pub episode: Option<i64>,
+    pub folder_path: Option<String>,
+    pub subtitle_count: i64,
     pub genre: Option<String>,
     pub sample_rate: Option<i64>,
     pub bit_depth: Option<i64>,
@@ -87,6 +102,8 @@ pub struct NewMediaItem {
 /// Müzik tarayıcı: etiketi olmayan dosyalar için gösterilen adlar.
 pub const UNKNOWN_ARTIST: &str = "Bilinmeyen Sanatçı";
 pub const UNKNOWN_ALBUM: &str = "Bilinmeyen Albüm";
+/// Dizi tarayıcı: desen bulunamayan bölümler için.
+pub const UNKNOWN_SHOW: &str = "Bilinmeyen Dizi";
 
 #[derive(Debug, Serialize)]
 pub struct ArtistSummary {
@@ -102,6 +119,33 @@ pub struct AlbumSummary {
     pub track_count: i64,
     pub total_duration: Option<i64>,
     pub has_cover: bool,
+}
+
+/// Film tarayıcı: bir klasördeki tüm video dosyalarını temsil eden grup kartı.
+#[derive(Debug, Serialize)]
+pub struct MovieGroup {
+    pub title: String,
+    /// Grup anahtarı: klasör yolu (eski kayıtlarda "file:<dosya yolu>").
+    pub folder_path: String,
+    pub file_count: i64,
+    pub total_size: i64,
+    pub has_subtitles: bool,
+    pub disk_label: Option<String>,
+}
+
+/// Dizi tarayıcı: dizi özeti.
+#[derive(Debug, Serialize)]
+pub struct ShowSummary {
+    pub show_title: String,
+    pub season_count: i64,
+    pub episode_count: i64,
+}
+
+/// Dizi tarayıcı: sezon özeti.
+#[derive(Debug, Serialize)]
+pub struct SeasonSummary {
+    pub season: i64,
+    pub episode_count: i64,
 }
 
 pub fn open(db_path: &Path) -> Result<Connection, String> {
@@ -137,6 +181,11 @@ fn ensure_columns(conn: &Connection) -> Result<(), String> {
         ("track_number", "INTEGER"),
         ("disc_number", "INTEGER"),
         ("year", "INTEGER"),
+        ("show_title", "TEXT"),
+        ("season", "INTEGER"),
+        ("episode", "INTEGER"),
+        ("folder_path", "TEXT"),
+        ("subtitle_count", "INTEGER NOT NULL DEFAULT 0"),
         ("genre", "TEXT"),
         ("sample_rate", "INTEGER"),
         ("bit_depth", "INTEGER"),
@@ -217,10 +266,11 @@ pub fn upsert_media(conn: &Connection, item: &NewMediaItem) -> Result<(), String
     conn.execute(
         "INSERT INTO media_items
              (id, title, artist, album, media_type, file_path, file_size, disk_label,
-              format, duration, track_number, disc_number, year, genre, sample_rate,
-              bit_depth, channels, cover_image_path)
+              format, duration, track_number, disc_number, year, show_title, season,
+              episode, folder_path, subtitle_count, genre, sample_rate, bit_depth,
+              channels, cover_image_path)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                 ?16, ?17, ?18)
+                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
          ON CONFLICT(file_path) DO UPDATE SET
              title = excluded.title,
              artist = excluded.artist,
@@ -233,6 +283,11 @@ pub fn upsert_media(conn: &Connection, item: &NewMediaItem) -> Result<(), String
              track_number = excluded.track_number,
              disc_number = excluded.disc_number,
              year = excluded.year,
+             show_title = excluded.show_title,
+             season = excluded.season,
+             episode = excluded.episode,
+             folder_path = excluded.folder_path,
+             subtitle_count = excluded.subtitle_count,
              genre = excluded.genre,
              sample_rate = excluded.sample_rate,
              bit_depth = excluded.bit_depth,
@@ -253,6 +308,11 @@ pub fn upsert_media(conn: &Connection, item: &NewMediaItem) -> Result<(), String
             item.track_number,
             item.disc_number,
             item.year,
+            item.show_title,
+            item.season,
+            item.episode,
+            item.folder_path,
+            item.subtitle_count,
             item.genre,
             item.sample_rate,
             item.bit_depth,
@@ -312,6 +372,7 @@ pub fn query_library(
 /// Ortak kolon listesi — SELECT ve satır eşlemesinde aynı sırada kullanılır.
 const MEDIA_COLS: &str = "id, title, artist, album, media_type, file_path, file_size,
                           disk_label, format, duration, track_number, disc_number, year,
+                          show_title, season, episode, folder_path, subtitle_count,
                           genre, sample_rate, bit_depth, channels, cover_image_path,
                           created_at, updated_at";
 
@@ -330,13 +391,18 @@ fn map_media_item(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
         track_number: row.get(10)?,
         disc_number: row.get(11)?,
         year: row.get(12)?,
-        genre: row.get(13)?,
-        sample_rate: row.get(14)?,
-        bit_depth: row.get(15)?,
-        channels: row.get(16)?,
-        cover_image_path: row.get(17)?,
-        created_at: row.get(18)?,
-        updated_at: row.get(19)?,
+        show_title: row.get(13)?,
+        season: row.get(14)?,
+        episode: row.get(15)?,
+        folder_path: row.get(16)?,
+        subtitle_count: row.get(17)?,
+        genre: row.get(18)?,
+        sample_rate: row.get(19)?,
+        bit_depth: row.get(20)?,
+        channels: row.get(21)?,
+        cover_image_path: row.get(22)?,
+        created_at: row.get(23)?,
+        updated_at: row.get(24)?,
     })
 }
 
@@ -539,4 +605,166 @@ pub fn set_album_cover(
     .map(|n| n as u64)
     .map_err(|e| e.to_string())
 }
+
+/// Filmleri klasör bazında gruplar (aynı klasördeki CD1/CD2 vb. tek kart olur).
+/// Eski kayıtlarda folder_path NULL'dur; bunlar dosya başına ayrı grup olur
+/// ("file:<yol>" sentetik anahtarıyla) — yeniden taramayla düzelir.
+pub fn list_movies(conn: &Connection, query: Option<&str>) -> Result<Vec<MovieGroup>, String> {
+    let sql = "SELECT COALESCE(NULLIF(folder_path, ''), 'file:' || file_path) AS gkey,
+                      MAX(title), COUNT(*), SUM(file_size),
+                      MAX(CASE WHEN subtitle_count > 0 THEN 1 ELSE 0 END),
+                      MIN(disk_label)
+               FROM media_items
+               WHERE media_type = 'movie'
+                 AND (:q IS NULL OR title LIKE :q)
+               GROUP BY gkey
+               ORDER BY 2 COLLATE NOCASE";
+
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let groups = stmt
+        .query_map(
+            named_params! {
+                ":q": query.map(|q| format!("%{q}%")),
+            },
+            |row| {
+                Ok(MovieGroup {
+                    folder_path: row.get(0)?,
+                    title: row.get(1)?,
+                    file_count: row.get(2)?,
+                    total_size: row.get(3)?,
+                    has_subtitles: row.get::<_, i64>(4)? != 0,
+                    disk_label: row.get(5)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(groups)
+}
+
+/// Bir film grubunun dosyalarını (oynatma sırasına göre) döndürür.
+pub fn movie_files(conn: &Connection, group_key: &str) -> Result<Vec<MediaItem>, String> {
+    if let Some(fp) = group_key.strip_prefix("file:") {
+        // Eski kayıt: grup anahtarı = dosya yolunun kendisi
+        let sql = &format!(
+            "SELECT {MEDIA_COLS} FROM media_items WHERE file_path = :fp LIMIT 1"
+        );
+        let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+        let files = stmt
+            .query_map(named_params! { ":fp": fp }, map_media_item)
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        return Ok(files);
+    }
+
+    let sql = &format!(
+        "SELECT {MEDIA_COLS} FROM media_items
+         WHERE media_type = 'movie' AND folder_path = :key
+         ORDER BY file_path COLLATE NOCASE"
+    );
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let files = stmt
+        .query_map(named_params! { ":key": group_key }, map_media_item)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(files)
+}
+
+/// Dizileri sezon/bölüm sayılarıyla listeler (dizi tarayıcı üst seviye).
+pub fn list_shows(conn: &Connection, query: Option<&str>) -> Result<Vec<ShowSummary>, String> {
+    let sql = "SELECT eff_show, COUNT(DISTINCT COALESCE(season, 1)), COUNT(*)
+               FROM (
+                   SELECT COALESCE(NULLIF(show_title, ''), :unknown_show) AS eff_show,
+                          season
+                   FROM media_items
+                   WHERE media_type = 'series'
+                     AND (:q IS NULL OR show_title LIKE :q OR title LIKE :q)
+               )
+               GROUP BY eff_show
+               ORDER BY eff_show COLLATE NOCASE";
+
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let shows = stmt
+        .query_map(
+            named_params! {
+                ":unknown_show": UNKNOWN_SHOW,
+                ":q": query.map(|q| format!("%{q}%")),
+            },
+            |row| {
+                Ok(ShowSummary {
+                    show_title: row.get(0)?,
+                    season_count: row.get(1)?,
+                    episode_count: row.get(2)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(shows)
+}
+
+/// Bir dizinin sezonlarını bölüm sayılarıyla listeler.
+pub fn list_seasons(conn: &Connection, show: &str) -> Result<Vec<SeasonSummary>, String> {
+    let sql = "SELECT COALESCE(season, 1), COUNT(*)
+               FROM media_items
+               WHERE media_type = 'series'
+                 AND COALESCE(NULLIF(show_title, ''), :unknown_show) = :show
+               GROUP BY 1
+               ORDER BY 1";
+
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let seasons = stmt
+        .query_map(
+            named_params! {
+                ":unknown_show": UNKNOWN_SHOW,
+                ":show": show,
+            },
+            |row| {
+                Ok(SeasonSummary {
+                    season: row.get(0)?,
+                    episode_count: row.get(1)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(seasons)
+}
+
+/// Bir dizinin (tüm sezonların) bölümlerini sıralı döndürür.
+/// `season` verilirse yalnız o sezon, yoksa tümü ("Tümünü Çal" için).
+pub fn list_episodes(
+    conn: &Connection,
+    show: &str,
+    season: Option<i64>,
+) -> Result<Vec<MediaItem>, String> {
+    let sql = &format!(
+        "SELECT {MEDIA_COLS} FROM media_items
+         WHERE media_type = 'series'
+           AND COALESCE(NULLIF(show_title, ''), :unknown_show) = :show
+           AND (:season IS NULL OR COALESCE(season, 1) = :season)
+         ORDER BY COALESCE(season, 1), COALESCE(episode, 999999), title COLLATE NOCASE"
+    );
+
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let episodes = stmt
+        .query_map(
+            named_params! {
+                ":unknown_show": UNKNOWN_SHOW,
+                ":show": show,
+                ":season": season,
+            },
+            map_media_item,
+        )
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(episodes)
+}
+
 

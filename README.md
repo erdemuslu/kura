@@ -70,6 +70,11 @@ npm run tauri build         # release paketi
 | `GET /api/music/tracks?album=&artist=` | Bir albümün şarkıları (disk + track sırasına göre) |
 | `GET /api/music/artist-tracks?artist=` | Bir sanatçının tüm şarkıları |
 | `GET /api/cover?album=&artist=` | Albüm kapağı (gömülü/klasör → iTunes fallback) |
+| `GET /api/movies?q=` | Filmler (klasör bazında gruplu: CD1/CD2 tek kart) |
+| `GET /api/movies/files?group=` | Bir film grubunun dosyaları |
+| `GET /api/series/shows?q=` | Diziler (sezon/bölüm sayılarıyla) |
+| `GET /api/series/seasons?show=` | Bir dizinin sezonları |
+| `GET /api/series/episodes?show=&season=` | Bölümler (season opsiyonel) |
 | `POST /api/open-batch` `{ file_paths, target_app, playlist_title }` | "Tümünü Çal" — .m3u8 playlist olarak oynatıcıya ekler |
 
 ### Güvenlik notları
@@ -87,7 +92,14 @@ npm run tauri build         # release paketi
 1. Uygulamayı başlatın.
 2. "Dizin yolu" alanına bir medya klasörü girin (örn. `/Volumes/DiskAdi/Filmler`)
    veya "Gözat…" ile seçin — dosyalar türlerine göre Film/Dizi/Müzik sekmelerine düşer.
-   Dizi tespiti dosya adındaki `SxxExx` desenine göredir. Gizli dosyalar
+   **Filmler klasör bazında gruplanır:** aynı klasördeki tüm videolar (CD1/CD2
+   gibi) tek kart olur; başlık doğrudan kökteyse dosya adı, değilse klasör
+   adıdır. Aynı adlı altyazılar (`.srt` vb.) kartta "CC" rozeti olarak görünür
+   ve oynatıcı tarafından otomatik yüklenir. `sample`/`trailer`/`teaser`
+   adlı videolar indekslenmez.
+   **Diziler hiyerarşiktir:** dosya adındaki `S01E01` / `2x05` deseninden
+   dizi/sezon/bölüm çıkarılır; Dizi → Sezon → Bölüm şeklinde gezilir, dizi
+   veya sezon "⋯" menüsünden playlist olarak oynatılabilir. Gizli dosyalar
    (macOS `._*` AppleDouble çöpleri, `.DS_Store`, Windows gizli
    attribute'luları) indekslenmez; her tarama öncesi indeksten de temizlenir.
 3. Kartlara tıklayarak seçili oynatıcıda başlatın.

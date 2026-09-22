@@ -65,6 +65,15 @@ pub struct CoverQuery {
     pub artist: String,
 }
 
+/// Film/dizi tarayıcı uçları için ortak query parametreleri.
+#[derive(Deserialize)]
+pub struct VideoQuery {
+    pub q: Option<String>,
+    pub show: Option<String>,
+    pub season: Option<i64>,
+    pub group: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct ApiResponse {
     pub success: bool,
@@ -146,6 +155,11 @@ pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
         .route("/api/music/tracks", get(music_tracks))
         .route("/api/music/artist-tracks", get(music_artist_tracks))
         .route("/api/cover", get(cover))
+        .route("/api/movies", get(movies_route))
+        .route("/api/movies/files", get(movie_files_route))
+        .route("/api/series/shows", get(series_shows))
+        .route("/api/series/seasons", get(series_seasons))
+        .route("/api/series/episodes", get(series_episodes))
         .route("/api/open-batch", post(open_batch))
         .fallback_service(ServeDir::new(static_root).append_index_html_on_directories(true))
         .layer(CorsLayer::permissive())
@@ -413,6 +427,109 @@ async fn cover(
     }
 
     (StatusCode::NOT_FOUND, "").into_response()
+}
+
+async fn movies_route(
+    Query(q): Query<VideoQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<Vec<db::MovieGroup>>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    let groups = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_movies(&conn, q.q.as_deref())
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+    Ok(Json(groups))
+}
+
+async fn movie_files_route(
+    Query(q): Query<VideoQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<Vec<db::MediaItem>>, (StatusCode, Json<ApiResponse>)> {
+    let Some(group) = q.group.clone() else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message: "group parametresi zorunlu".into(),
+            }),
+        ));
+    };
+    let db_path = st.db_path.clone();
+    let files = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::movie_files(&conn, &group)
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+    Ok(Json(files))
+}
+
+async fn series_shows(
+    Query(q): Query<VideoQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<Vec<db::ShowSummary>>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    let shows = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_shows(&conn, q.q.as_deref())
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+    Ok(Json(shows))
+}
+
+async fn series_seasons(
+    Query(q): Query<VideoQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<Vec<db::SeasonSummary>>, (StatusCode, Json<ApiResponse>)> {
+    let Some(show) = q.show.clone() else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message: "show parametresi zorunlu".into(),
+            }),
+        ));
+    };
+    let db_path = st.db_path.clone();
+    let seasons = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_seasons(&conn, &show)
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+    Ok(Json(seasons))
+}
+
+async fn series_episodes(
+    Query(q): Query<VideoQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<Vec<db::MediaItem>>, (StatusCode, Json<ApiResponse>)> {
+    let Some(show) = q.show.clone() else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message: "show parametresi zorunlu".into(),
+            }),
+        ));
+    };
+    let db_path = st.db_path.clone();
+    let season = q.season;
+    let episodes = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::list_episodes(&conn, &show, season)
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+    Ok(Json(episodes))
 }
 
 /// Bir sanatçının tüm şarkıları ("Tümünü Çal" için; album+artist'ten bağımsız).

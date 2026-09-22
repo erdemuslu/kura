@@ -1,8 +1,10 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import MediaGrid from './components/MediaGrid';
+import MoviesView from './components/MoviesView';
 import MusicView from './components/MusicView';
 import PlayerSelect from './components/PlayerSelect';
 import ScanPanel from './components/ScanPanel';
+import SeriesView from './components/SeriesView';
 import SettingsPanel from './components/SettingsPanel';
 import StorageBadge from './components/StorageBadge';
 import {
@@ -13,7 +15,7 @@ import {
   type MediaType,
   type RemoteInfo,
 } from './api/client';
-import { useDisks, useLaunchPlayer, useLibrary } from './hooks/useMedia';
+import { useDisks } from './hooks/useMedia';
 
 const TABS: { id: MediaType; label: string }[] = [
   { id: 'movie', label: 'Film' },
@@ -30,11 +32,10 @@ export default function App() {
   const [tokenInput, setTokenInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
 
-  // Müzik sekmesinde düz liste sorgusu atlanır; MusicView hiyerarşik
-  // (sanatçı/albüm) sorgularını kendisi yapar.
-  const library = useLibrary(tab, query, tab !== 'music');
+  // Her sekme kendi görünümlerinin sorgularını yapar (Movies/Series/MusicView);
+  // App yalnızca disk durumunu çeker. 401 (token) hatası da buradan yakalanır.
   const disks = useDisks();
-  const launch = useLaunchPlayer();
+  const queryClient = useQueryClient();
 
   // Uzaktan kumanda bilgisi yalnızca masaüstünde (IPC) çekilir.
   useEffect(() => {
@@ -43,12 +44,9 @@ export default function App() {
       .catch(() => setRemote(null));
   }, []);
 
-  const handlePlay = (filePath: string) => {
-    setPlayingPath(filePath);
-    launch.mutate({ filePath, targetApp: player });
-  };
-
-  const authError = library.error instanceof ApiAuthError;
+  // Token doğrulaması açıksa tarayıcıdan ilk istek 401 döner —
+  // App'in disks sorgusu bunu yakalar ve token girişi banner'ı gösterir.
+  const authError = disks.error instanceof ApiAuthError;
   const remoteUrl = remote?.local_ip
     ? `http://${remote.local_ip}:${remote.port}`
     : null;
@@ -131,7 +129,8 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setRemoteToken(tokenInput.trim());
-                  library.refetch();
+                  // Token kaydedildi — tüm sorguları yeni başlıkla yenile
+                  queryClient.invalidateQueries();
                 }}
                 className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-400"
               >
@@ -177,32 +176,28 @@ export default function App() {
 
         <ScanPanel />
 
-        {launch.data && (
-          <p
-            className={`text-sm ${
-              launch.data.success ? 'text-emerald-300' : 'text-red-400'
-            }`}
-          >
-            {launch.data.message}
-          </p>
+        {tab === 'movie' && (
+          <MoviesView
+            player={player}
+            query={query}
+            playingLabel={playingPath}
+            onPlayed={setPlayingPath}
+          />
         )}
-        {launch.isError && (
-          <p className="text-sm text-red-400">Hata: {String(launch.error)}</p>
-        )}
-
-        {tab === 'music' ? (
-          <MusicView
+        {tab === 'series' && (
+          <SeriesView
             player={player}
             query={query}
             playingPath={playingPath}
             onPlayed={setPlayingPath}
           />
-        ) : (
-          <MediaGrid
-            items={library.data}
-            loading={library.isLoading}
+        )}
+        {tab === 'music' && (
+          <MusicView
+            player={player}
+            query={query}
             playingPath={playingPath}
-            onPlay={(item) => handlePlay(item.file_path)}
+            onPlayed={setPlayingPath}
           />
         )}
       </main>

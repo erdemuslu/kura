@@ -20,6 +20,11 @@ export interface MediaItem {
   track_number: number | null;
   disc_number: number | null;
   year: number | null;
+  show_title: string | null;
+  season: number | null;
+  episode: number | null;
+  folder_path: string | null;
+  subtitle_count: number;
   genre: string | null;
   sample_rate: number | null;
   bit_depth: number | null;
@@ -34,6 +39,29 @@ export interface ArtistSummary {
   artist: string;
   album_count: number;
   track_count: number;
+}
+
+/** Film tarayıcı: bir klasördeki tüm video dosyalarını temsil eden grup kartı. */
+export interface MovieGroup {
+  title: string;
+  folder_path: string;
+  file_count: number;
+  total_size: number;
+  has_subtitles: boolean;
+  disk_label: string | null;
+}
+
+/** Dizi tarayıcı: dizi özeti. */
+export interface ShowSummary {
+  show_title: string;
+  season_count: number;
+  episode_count: number;
+}
+
+/** Dizi tarayıcı: sezon özeti. */
+export interface SeasonSummary {
+  season: number;
+  episode_count: number;
 }
 
 /** Müzik tarayıcı: albüm özeti (gruplama sorgusundan döner). */
@@ -307,6 +335,70 @@ export async function launchPlayerBatch(
 export function coverUrl(album: string, artist: string): string {
   const base = isRunningInTauri() ? 'http://localhost:8080' : '';
   return `${base}/api/cover?${new URLSearchParams({ album, artist }).toString()}`;
+}
+
+/** Film tarayıcı: klasör bazında gruplanmış filmler. */
+export async function getMovies(query: string): Promise<MovieGroup[]> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<MovieGroup[]>('list_movies', { query: query || null });
+  }
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  const res = await restFetch(`/api/movies?${params}`);
+  return res.json();
+}
+
+/** Film tarayıcı: bir film grubunun dosyaları (oynatma için). */
+export async function getMovieFiles(groupKey: string): Promise<MediaItem[]> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<MediaItem[]>('movie_files', { groupKey });
+  }
+  const params = new URLSearchParams({ group: groupKey });
+  const res = await restFetch(`/api/movies/files?${params}`);
+  return res.json();
+}
+
+/** Dizi tarayıcı: diziler (sezon/bölüm sayılarıyla). */
+export async function getShows(query: string): Promise<ShowSummary[]> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<ShowSummary[]>('list_shows', { query: query || null });
+  }
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  const res = await restFetch(`/api/series/shows?${params}`);
+  return res.json();
+}
+
+/** Dizi tarayıcı: bir dizinin sezonları. */
+export async function getSeasons(show: string): Promise<SeasonSummary[]> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<SeasonSummary[]>('list_seasons', { show });
+  }
+  const params = new URLSearchParams({ show });
+  const res = await restFetch(`/api/series/seasons?${params}`);
+  return res.json();
+}
+
+/** Dizi tarayıcı: bölümler. `season` yoksa tüm sezonlar ("Tümünü Çal" için). */
+export async function getEpisodes(
+  show: string,
+  season?: number,
+): Promise<MediaItem[]> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<MediaItem[]>('list_episodes', {
+      show,
+      season: season ?? null,
+    });
+  }
+  const params = new URLSearchParams({ show });
+  if (season !== undefined) params.set('season', String(season));
+  const res = await restFetch(`/api/series/episodes?${params}`);
+  return res.json();
 }
 
 /* Ayarlar — yalnızca masaüstü IPC (ayarlar ağ üzerinden değiştirilemez). */

@@ -15,6 +15,11 @@ const VIDEO_EXTS: &[&str] = &[
 const AUDIO_EXTS: &[&str] = &[
     "mp3", "flac", "m4a", "wav", "aac", "ogg", "opus", "aiff", "wma",
 ];
+/// Altyazı uzantıları — indekslenmez ama video dosyasına eşleşme sayılır.
+const SUBTITLE_EXTS: &[&str] = &["srt", "sub", "ass", "ssa", "vtt"];
+/// Bu anahtar kelimeleri içeren video dosyaları indekslenmez
+/// (sample/trailer/teaser — kütüphane kartlarında istenmeyen girdiler).
+const JUNK_STEM_MARKERS: &[&str] = &["sample", "trailer", "teaser"];
 
 #[derive(Serialize)]
 pub struct ScanSummary {
@@ -50,24 +55,100 @@ fn classify(ext: &str) -> Option<MediaKind> {
     }
 }
 
-/// Dosya adında "SxxExx" (S01E01) deseni arar — dizi tespiti.
-fn looks_like_episode(file_name: &str) -> bool {
-    let b = file_name.to_ascii_uppercase().into_bytes();
-    if b.len() < 6 {
-        return false;
-    }
-    for i in 0..=(b.len() - 6) {
-        if b[i] == b'S'
-            && b[i + 1].is_ascii_digit()
-            && b[i + 2].is_ascii_digit()
-            && b[i + 3] == b'E'
-            && b[i + 4].is_ascii_digit()
-            && b[i + 5].is_ascii_digit()
-        {
-            return true;
+/// "sample", "trailer", "teaser" içeren video adları indekslenmez.
+fn is_junk_stem(stem: &str) -> bool {
+    let lower = stem.to_ascii_lowercase();
+    JUNK_STEM_MARKERS.iter().any(|m| lower.contains(m))
+}
+
+/// Başlık temizleme: nokta/alt çizgi → boşluk, çoklu boşluklar tekilleştirilir.
+/// "Film.Adi.2020.1080p" → "Film Adi 2020 1080p"
+fn clean_title(s: &str) -> String {
+    s.replace(['.', '_'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Dosya adından "S01E02" / "2x05" desenini çıkarır.
+/// Döndürür: (sezon, bölüm, desen öncesindeki dizi adı öneki).
+fn parse_episode_pattern(stem: &str) -> Option<(i64, i64, String)> {
+    let chars: Vec<char> = stem.chars().collect();
+
+    // S<sezon>E<bölüm> — 1-2 hane (S01E02, S1E1)
+    let mut i = 0;
+    while i + 2 < chars.len() {
+        if chars[i] == 'S' || chars[i] == 's' {
+            let mut j = i + 1;
+            let mut season = String::new();
+            while j < chars.len() && chars[j].is_ascii_digit() && season.len() < 2 {
+                season.push(chars[j]);
+                j += 1;
+            }
+            let has_e = j < chars.len() && (chars[j] == 'E' || chars[j] == 'e');
+            if !season.is_empty() && has_e && j + 1 < chars.len() && chars[j + 1].is_ascii_digit()
+            {
+                let mut k = j + 1;
+                let mut episode = String::new();
+                while k < chars.len() && chars[k].is_ascii_digit() && episode.len() < 2 {
+                    episode.push(chars[k]);
+                    k += 1;
+                }
+                let prefix: String = stem.chars().take(i).collect();
+                let prefix = prefix.trim_end_matches(['.', '-', '_', ' ', ')']).to_string();
+                return Some((
+                    season.parse().ok()?,
+                    episode.parse().ok()?,
+                    prefix,
+                ));
+            }
         }
+        i += 1;
     }
-    false
+
+    // <sezon>x<bölüm> — 1-2 hane ("2x05"). Önceki karakterin sayı OLMAMASI
+    // zorunludur: "1920x1080" gibi çözünürlükler için false-positive koruması.
+    let mut i = 0;
+    while i + 2 < chars.len() {
+        if chars[i].is_ascii_digit() {
+            let mut j = i;
+            let mut season = String::new();
+            while j < chars.len() && chars[j].is_ascii_digit() && season.len() < 2 {
+                season.push(chars[j]);
+                j += 1;
+            }
+            let has_x = j < chars.len() && (chars[j] == 'x' || chars[j] == 'X');
+            let prev_is_digit = i > 0 && chars[i - 1].is_ascii_digit();
+            if !season.is_empty() && !prev_is_digit && has_x
+                && j + 1 < chars.len() && chars[j + 1].is_ascii_digit()
+            {
+                let mut k = j + 1;
+                let mut episode = String::new();
+                while k < chars.len() && chars[k].is_ascii_digit() && episode.len() < 2 {
+                    episode.push(chars[k]);
+                    k += 1;
+                }
+                if !episode.is_empty() {
+                    let prefix: String = stem.chars().take(i).collect();
+                    let prefix =
+                        prefix.trim_end_matches(['.', '-', '_', ' ', ')']).to_string();
+                    return Some((season.parse().ok()?, episode.parse().ok()?, prefix));
+                }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Tarama kökü altındaki ilk klasör adını döndürür
+/// ("Dizi Adı/Sezon 1/bölüm.mkv" → "Dizi Adı").
+fn first_folder_under(path: &Path, root: &Path) -> Option<String> {
+    let rel = path.strip_prefix(root).ok()?;
+    rel.components().find_map(|c| match c {
+        std::path::Component::Normal(name) => Some(name.to_string_lossy().to_string()),
+        _ => None,
+    })
 }
 
 /// Yoldan disk etiketi çıkarır: /Volumes/<label>/..., D:\..., aksi halde "local".
@@ -157,6 +238,9 @@ pub fn scan_directory_with_progress(
     let mut album_covers: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
 
+    // 1. geçiş: dosyaları topla. (Bir video, altyazısından önce de
+    // karşılaşabileceğimiz için altyazı haritası tüm dosyaları gerektirir.)
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
     for entry in WalkDir::new(root)
         .min_depth(1)
         .follow_links(false)
@@ -166,30 +250,58 @@ pub fn scan_directory_with_progress(
         if !entry.file_type().is_file() {
             continue;
         }
-        let path = entry.path();
         // Gizli dosyaları atla (macOS `._*` AppleDouble, `.DS_Store`,
         // Windows gizli attribute'u vb.) — hiç indekslenmez, tarama
         // sayacına bile girmez.
-        if is_hidden_file(path) {
+        if is_hidden_file(entry.path()) {
             continue;
         }
+        files.push(entry.into_path());
+    }
+
+    // Altyazı haritası: klasör → { dosya adı (stem) → adet }
+    let mut subs: std::collections::HashMap<String, std::collections::HashMap<String, i64>> =
+        std::collections::HashMap::new();
+    for path in &files {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if SUBTITLE_EXTS.contains(&ext.as_str()) {
+            if let (Some(dir), Some(stem)) = (path.parent(), path.file_stem()) {
+                subs.entry(dir.to_string_lossy().to_string())
+                    .or_default()
+                    .entry(stem.to_string_lossy().to_string())
+                    .and_modify(|c| *c += 1)
+                    .or_insert(1);
+            }
+        }
+    }
+
+    // 2. geçiş: medya dosyalarını indeksle
+    for path in &files {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
         let Some(kind) = classify(&ext) else { continue };
+        let file_path = path.to_string_lossy().to_string();
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| file_path.clone());
+        // Junk/fragman videoları (sample, trailer, teaser) indekslenmez
+        if kind == MediaKind::Video && is_junk_stem(&stem) {
+            continue;
+        }
         summary.scanned_files += 1;
 
         let Ok(meta) = std::fs::metadata(path) else {
             summary.errors += 1;
             continue;
         };
-        let file_path = path.to_string_lossy().to_string();
-        let stem = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| file_path.clone());
 
         let item = match kind {
             MediaKind::Audio => {
@@ -251,6 +363,11 @@ pub fn scan_directory_with_progress(
                     track_number: m.track_number,
                     disc_number: m.disc_number,
                     year: m.year,
+                    show_title: None,
+                    season: None,
+                    episode: None,
+                    folder_path: None,
+                    subtitle_count: 0,
                     genre: m.genre,
                     sample_rate: m.sample_rate,
                     bit_depth: m.bit_depth,
@@ -258,29 +375,90 @@ pub fn scan_directory_with_progress(
                     cover_image_path: cover_path,
                 }
             }
-            MediaKind::Video => NewMediaItem {
-                title: stem,
-                artist: None,
-                album: None,
-                media_type: if looks_like_episode(&file_path) {
-                    "series"
+            MediaKind::Video => {
+                let folder_path = path
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string());
+                // Aynı adlı altyazı sayısı (klasör bazlı haritadan)
+                let subtitle_count = path
+                    .parent()
+                    .and_then(|d| subs.get(&d.to_string_lossy().to_string()))
+                    .and_then(|m| m.get(&stem).copied())
+                    .unwrap_or(0);
+
+                if let Some((season, episode, show_prefix)) = parse_episode_pattern(&stem) {
+                    // Dizi: dosya adında SxxExx / xExx deseni bulundu
+                    let show_title = if !show_prefix.is_empty() {
+                        clean_title(&show_prefix)
+                    } else {
+                        // Desen öncesi metin yoksa: tarama kökü altındaki
+                        // ilk klasör (örn. "Dizi Adı/Sezon 1/bölüm.mkv")
+                        first_folder_under(path, root)
+                            .map(|n| clean_title(&n))
+                            .unwrap_or_else(|| db::UNKNOWN_SHOW.to_string())
+                    };
+                    NewMediaItem {
+                        title: clean_title(&stem),
+                        artist: None,
+                        album: None,
+                        media_type: "series",
+                        show_title: Some(show_title),
+                        season: Some(season),
+                        episode: Some(episode),
+                        folder_path,
+                        subtitle_count,
+                        file_path,
+                        file_size: meta.len() as i64,
+                        disk_label: summary.disk_label.clone(),
+                        format: ext,
+                        duration: None,
+                        track_number: None,
+                        disc_number: None,
+                        year: None,
+                        genre: None,
+                        sample_rate: None,
+                        bit_depth: None,
+                        channels: None,
+                        cover_image_path: None,
+                    }
                 } else {
-                    "movie"
-                },
-                file_path,
-                file_size: meta.len() as i64,
-                disk_label: summary.disk_label.clone(),
-                format: ext,
-                duration: None,
-                track_number: None,
-                disc_number: None,
-                year: None,
-                genre: None,
-                sample_rate: None,
-                bit_depth: None,
-                channels: None,
-                cover_image_path: None,
-            },
+                    // Film: doğrudan tarama kökündeyse dosya adı,
+                    // değilse klasör adı başlıktır (Plex/Jellyfin tarzı).
+                    let at_root = path.parent() == Some(root);
+                    let title = if at_root {
+                        clean_title(&stem)
+                    } else {
+                        path.parent()
+                            .and_then(|p| p.file_name())
+                            .map(|n| clean_title(&n.to_string_lossy()))
+                            .unwrap_or_else(|| clean_title(&stem))
+                    };
+                    NewMediaItem {
+                        title,
+                        artist: None,
+                        album: None,
+                        media_type: "movie",
+                        show_title: None,
+                        season: None,
+                        episode: None,
+                        folder_path,
+                        subtitle_count,
+                        file_path,
+                        file_size: meta.len() as i64,
+                        disk_label: summary.disk_label.clone(),
+                        format: ext,
+                        duration: None,
+                        track_number: None,
+                        disc_number: None,
+                        year: None,
+                        genre: None,
+                        sample_rate: None,
+                        bit_depth: None,
+                        channels: None,
+                        cover_image_path: None,
+                    }
+                }
+            }
         };
 
         match db::upsert_media(conn, &item) {
