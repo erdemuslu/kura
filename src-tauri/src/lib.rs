@@ -141,6 +141,8 @@ fn resolve_dist_path() -> PathBuf {
 
 pub fn run() {
     tauri::Builder::default()
+        // Native klasör seçme diyaloğu (ScanPanel "Gözat…" butonu)
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // DB, kalıcı olması için uygulama veri dizininde tutulur
             // (CWD değil — harici disk çıkarılsa bile indeks korunur).

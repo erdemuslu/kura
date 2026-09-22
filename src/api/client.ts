@@ -187,3 +187,30 @@ export async function getRemoteInfo(): Promise<RemoteInfo | null> {
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<RemoteInfo>('get_remote_info');
 }
+
+/**
+ * Native klasör seçme diyaloğunu açar (yalnızca masaüstünde).
+ * Tarayıcı/remote modunda null döner — orada manuel yol girişi kullanılır.
+ */
+export async function browseDirectory(): Promise<string | null> {
+  if (!isRunningInTauri()) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: 'Medya dizini seç',
+  });
+  return typeof selected === 'string' ? selected : null;
+}
+
+/**
+ * Yoldan disk etiketi çıkarır (/Volumes/<label>/..., D:\...),
+ * çıkarılamıyorsa boş string döner (Rust tarafındaki detect_disk_label ile uyumlu).
+ */
+export function diskLabelFromPath(path: string): string {
+  const volumesMatch = path.match(/^\/Volumes\/([^/]+)/);
+  if (volumesMatch) return volumesMatch[1]!;
+  const windowsMatch = path.match(/^([A-Za-z]):[\\/]/);
+  if (windowsMatch) return windowsMatch[1]!.toUpperCase();
+  return '';
+}

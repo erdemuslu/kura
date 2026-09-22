@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { browseDirectory, diskLabelFromPath, isRunningInTauri } from '../api/client';
 import { useScan } from '../hooks/useMedia';
 
 /** Dizin yolu girilip kütüphaneyi tarayan panel. */
 export default function ScanPanel() {
   const [path, setPath] = useState('');
   const [diskLabel, setDiskLabel] = useState('');
+  const [browsing, setBrowsing] = useState(false);
   const scan = useScan();
 
   const onSubmit = (e: React.FormEvent) => {
@@ -14,16 +16,46 @@ export default function ScanPanel() {
     }
   };
 
+  /** Native klasör seçme diyaloğunu açar; seçince yolu ve (boşsa) disk
+   *  etiketini otomatik doldurur. Yalnızca masaüstünde görünür. */
+  const onBrowse = async () => {
+    setBrowsing(true);
+    try {
+      const selected = await browseDirectory();
+      if (selected) {
+        setPath(selected);
+        if (!diskLabel.trim()) {
+          setDiskLabel(diskLabelFromPath(selected));
+        }
+      }
+    } finally {
+      setBrowsing(false);
+    }
+  };
+
   return (
     <section className="rounded-xl bg-slate-800/60 p-4 ring-1 ring-slate-700">
       <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row">
-        <input
-          type="text"
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          placeholder="Dizin yolu (örn. /Volumes/Media/Filmler)"
-          className="min-w-0 flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400"
-        />
+        <div className="flex min-w-0 flex-1 gap-2">
+          <input
+            type="text"
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            placeholder="Dizin yolu (örn. /Volumes/Media/Filmler)"
+            className="min-w-0 flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400"
+          />
+          {isRunningInTauri() && (
+            <button
+              type="button"
+              onClick={onBrowse}
+              disabled={browsing}
+              title="Klasör seç…"
+              className="shrink-0 rounded-lg bg-slate-700 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-600 transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {browsing ? '…' : '📁 Gözat…'}
+            </button>
+          )}
+        </div>
         <input
           type="text"
           value={diskLabel}
