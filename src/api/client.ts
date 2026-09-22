@@ -50,6 +50,8 @@ export interface ScanSummary {
   scanned_files: number;
   indexed: number;
   errors: number;
+  /** Taramanın başında indeksten silinen gizli/çöp kayıt sayısı. */
+  cleaned: number;
   disk_label: string;
 }
 

@@ -163,6 +163,37 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), Stri
     .map_err(|e| e.to_string())
 }
 
+/// İndekste kalmış gizli dosya kayıtlarını siler (basename '.' ile başlayanlar:
+/// macOS `._*` AppleDouble çöpleri, `.DS_Store` vb.). Silinen kayıt sayısını döner.
+///
+/// Tarayıcı artık gizli dosyaları indekslemediğinden, bu fonksiyon yalnızca
+/// geçmiş taramalardan kalan kayıtları temizler; her taramanın başında çağrılır.
+pub fn cleanup_hidden_entries(conn: &Connection) -> Result<u64, String> {
+    let mut stmt = conn
+        .prepare("SELECT id, file_path FROM media_items")
+        .map_err(|e| e.to_string())?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(stmt);
+
+    let mut deleted: u64 = 0;
+    for (id, file_path) in rows {
+        let is_hidden = Path::new(&file_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().starts_with('.'))
+            .unwrap_or(true);
+        if is_hidden {
+            conn.execute("DELETE FROM media_items WHERE id = ?1", params![id])
+                .map_err(|e| e.to_string())?;
+            deleted += 1;
+        }
+    }
+    Ok(deleted)
+}
+
 /// Dosya yoluna göre upsert; disk yeniden tarandığında kayıt güncellenir.
 pub fn upsert_media(conn: &Connection, item: &NewMediaItem) -> Result<(), String> {
     conn.execute(

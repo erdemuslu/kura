@@ -86,7 +86,9 @@ npm run tauri build         # release paketi
 1. Uygulamayı başlatın.
 2. "Dizin yolu" alanına bir medya klasörü girin (örn. `/Volumes/DiskAdi/Filmler`)
    veya "Gözat…" ile seçin — dosyalar türlerine göre Film/Dizi/Müzik sekmelerine düşer.
-   Dizi tespiti dosya adındaki `SxxExx` desenine göredir.
+   Dizi tespiti dosya adındaki `SxxExx` desenine göredir. Gizli dosyalar
+   (macOS `._*` AppleDouble çöpleri, `.DS_Store`, Windows gizli
+   attribute'luları) indekslenmez; her tarama öncesi indeksten de temizlenir.
 3. Kartlara tıklayarak seçili oynatıcıda başlatın.
 4. Müzik sekmesi hiyerarşiktir: Albümler/Sanatçılar → sanatçı → albüm → şarkı
    listesi. Her kartın "⋯" menüsündeki **Tümünü Çal**, kartın tüm şarkılarını

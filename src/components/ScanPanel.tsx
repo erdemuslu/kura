@@ -112,7 +112,11 @@ export default function ScanPanel() {
       {scan.data && (
         <p className="mt-2 text-sm text-emerald-300">
           {scan.data.indexed} dosya indekslendi ({scan.data.scanned_files} tarandı,{' '}
-          {scan.data.errors} hata) — disk: {scan.data.disk_label}
+          {scan.data.errors} hata)
+          {scan.data.cleaned > 0
+            ? `, ${scan.data.cleaned} gizli/çöp kayıt temizlendi`
+            : ''}{' '}
+          — disk: {scan.data.disk_label}
         </p>
       )}
     </section>

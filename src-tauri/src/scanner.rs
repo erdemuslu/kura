@@ -21,6 +21,8 @@ pub struct ScanSummary {
     pub scanned_files: u64,
     pub indexed: u64,
     pub errors: u64,
+    /// Bu taramanın başında indeksten silinen gizli/çöp kayıt sayısı.
+    pub cleaned: u64,
     pub disk_label: String,
 }
 
@@ -86,6 +88,34 @@ pub fn detect_disk_label(path: &Path) -> String {
     "local".to_string()
 }
 
+/// Dosya gizli mi? (platforma özgü tespit)
+/// - macOS/Linux: isim '.' ile başlar (POSIX gizli kuralı — `._*` AppleDouble,
+///   `.DS_Store` vb. tek kuralda yakalanır)
+/// - Windows: gizlilik isimle değil dosya attribute'u ile belirlenir
+///   (FILE_ATTRIBUTE_HIDDEN biti); ayrıca cross-platform araçların ürettiği
+///   '.' ile başlayan isimler için isim kontrolü de yapılır.
+fn is_hidden_file(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or_default();
+    // POSIX gizli kuralı: '.' ile başlayan isimler
+    if name.starts_with('.') {
+        return true;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        if let Ok(meta) = std::fs::metadata(path) {
+            use std::os::windows::fs::MetadataExt;
+            return meta.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0;
+        }
+    }
+
+    false
+}
+
 /// Bir dizini recursive tarar, medya dosyalarını SQLite'a indeksler.
 pub fn scan_directory(
     conn: &Connection,
@@ -111,10 +141,14 @@ pub fn scan_directory_with_progress(
     let label = disk_label
         .map(str::to_string)
         .unwrap_or_else(|| detect_disk_label(root));
+    // Bu taramadan önce indekste kalmış gizli dosya kayıtlarını temizle
+    // (geçmiş taramalardan kalan `._*` çöpleri vb.).
+    let cleaned = db::cleanup_hidden_entries(conn)?;
     let mut summary = ScanSummary {
         scanned_files: 0,
         indexed: 0,
         errors: 0,
+        cleaned,
         disk_label: label,
     };
 
@@ -128,6 +162,12 @@ pub fn scan_directory_with_progress(
             continue;
         }
         let path = entry.path();
+        // Gizli dosyaları atla (macOS `._*` AppleDouble, `.DS_Store`,
+        // Windows gizli attribute'u vb.) — hiç indekslenmez, tarama
+        // sayacına bile girmez.
+        if is_hidden_file(path) {
+            continue;
+        }
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
