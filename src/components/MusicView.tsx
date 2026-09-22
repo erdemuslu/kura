@@ -225,7 +225,10 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
         </p>
       )}
 
-      {/* Albüm ızgarası (üst seviye "Albümler" veya sanatçı seviyesi) */}
+      {/* Albüm ızgarası (üst seviye "Albümler" veya sanatçı seviyesi).
+          Kapaklar koşulsuz istenir: sunucu DB → gömülü/klasör → iTunes
+          zinciriyle çözer; 404'de placeholder kalır. lazy sayesinde
+          yalnızca görünen kartlar istek atar. */}
       {showAlbums && level.kind !== 'album' &&
         (albums.isLoading ? (
           <p className="py-16 text-center text-slate-400">Yükleniyor…</p>
@@ -245,7 +248,7 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
                   meta={`${a.track_count} şarkı${
                     a.total_duration ? ` • ${formatDuration(a.total_duration)}` : ''
                   }`}
-                  cover={a.has_cover ? coverUrl(a.album, a.artist) : null}
+                  cover={coverUrl(a.album, a.artist)}
                   onClick={() => setLevel({ kind: 'album', album: a.album, artist: a.artist })}
                   onPlayAll={() => playAll(label, () => getAlbumTracks(a.album, a.artist))}
                   playAllLoading={batchLabel === label}
