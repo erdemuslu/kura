@@ -9,6 +9,7 @@ import {
   getEpisodes,
   launchPlayer,
   launchPlayerBatch,
+  posterUrlSeries,
   type LaunchResult,
   type MediaItem,
 } from '../api/client';
@@ -161,10 +162,20 @@ export default function SeriesView({
                 className="group relative cursor-pointer overflow-hidden rounded-xl bg-slate-800/60 ring-1 ring-slate-700 transition hover:ring-sky-400"
                 onClick={() => setLevel({ kind: 'seasons', show: s.show_title })}
               >
-                <div className="flex aspect-[2/3] items-center justify-center bg-gradient-to-br from-sky-600/40 to-cyan-900/60">
+                <div className="relative flex aspect-[2/3] items-center justify-center bg-gradient-to-br from-sky-600/40 to-cyan-900/60">
                   <span className="select-none text-4xl font-bold text-white/15 group-hover:text-white/25">
                     {s.show_title.trim().slice(0, 1).toUpperCase() || '?'}
                   </span>
+                  {/* Poster: TMDB; 404'de gizlenir, gradient kalır */}
+                  <img
+                    src={posterUrlSeries(s.show_title)}
+                    alt={s.show_title}
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
                 </div>
                 {menuButton(
                   s.show_title,

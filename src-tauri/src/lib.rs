@@ -9,6 +9,7 @@ mod db;
 mod runner;
 mod scanner;
 mod server;
+mod tmdb;
 
 use std::path::PathBuf;
 use tauri::{Emitter, Manager};
@@ -376,6 +377,38 @@ async fn regenerate_remote_token(
     .map_err(|e| e.to_string())?
 }
 
+/// Ayarlar: TMDB API key'i okur (film/dizi posterleri). Boş/ayarlanmamış → None.
+#[tauri::command]
+async fn get_tmdb_api_key(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        Ok::<_, String>(match db::get_setting_opt(&conn, "tmdb_api_key")? {
+            Some(k) if !k.is_empty() => Some(k),
+            _ => None,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Ayarlar: TMDB API key'i kaydeder (boş bırakılırsa özelliği kapatır).
+#[tauri::command]
+async fn set_tmdb_api_key(
+    key: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::set_setting(&conn, "tmdb_api_key", key.trim())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Native klasör seçme diyaloğu (ScanPanel "Gözat…" butonu)
@@ -418,6 +451,8 @@ pub fn run() {
             open_media_batch,
             set_remote_auth_enabled,
             regenerate_remote_token,
+            get_tmdb_api_key,
+            set_tmdb_api_key,
             list_movies,
             movie_files,
             list_shows,

@@ -337,6 +337,23 @@ export function coverUrl(album: string, artist: string): string {
   return `${base}/api/cover?${new URLSearchParams({ album, artist }).toString()}`;
 }
 
+/** Film posteri URL'si: klasör posteri → TMDB zinciri. */
+export function posterUrlMovie(title: string, folderPath: string | null): string {
+  const base = isRunningInTauri() ? 'http://localhost:8080' : '';
+  const params = new URLSearchParams({ kind: 'movie', title });
+  // "file:<yol>" sentetik anahtarları (eski kayıtlar) lokal arama için geçersiz
+  if (folderPath && !folderPath.startsWith('file:')) {
+    params.set('folder', folderPath);
+  }
+  return `${base}/api/cover?${params}`;
+}
+
+/** Dizi posteri URL'si: TMDB. */
+export function posterUrlSeries(showTitle: string): string {
+  const base = isRunningInTauri() ? 'http://localhost:8080' : '';
+  return `${base}/api/cover?${new URLSearchParams({ kind: 'series', title: showTitle })}`;
+}
+
 /** Film tarayıcı: klasör bazında gruplanmış filmler. */
 export async function getMovies(query: string): Promise<MovieGroup[]> {
   if (isRunningInTauri()) {
@@ -419,6 +436,22 @@ export async function regenerateRemoteToken(): Promise<string> {
   }
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<string>('regenerate_remote_token');
+}
+
+/** TMDB API key (film/dizi posterleri). Ayarlanmamışsa null. */
+export async function getTmdbApiKey(): Promise<string | null> {
+  if (!isRunningInTauri()) return null;
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string | null>('get_tmdb_api_key');
+}
+
+/** TMDB API key'i kaydeder (boş bırakılırsa özellik kapanır). */
+export async function setTmdbApiKey(key: string): Promise<void> {
+  if (!isRunningInTauri()) {
+    throw new Error('Ayarlar yalnızca masaüstü uygulamasından değiştirilebilir');
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('set_tmdb_api_key', { key });
 }
 
 /**

@@ -70,6 +70,8 @@ npm run tauri build         # release paketi
 | `GET /api/music/tracks?album=&artist=` | Bir albümün şarkıları (disk + track sırasına göre) |
 | `GET /api/music/artist-tracks?artist=` | Bir sanatçının tüm şarkıları |
 | `GET /api/cover?album=&artist=` | Albüm kapağı (gömülü/klasör → iTunes fallback) |
+| `GET /api/cover?kind=movie&title=&folder=` | Film posteri (klasör posteri → TMDB) |
+| `GET /api/cover?kind=series&title=` | Dizi posteri (TMDB) |
 | `GET /api/movies?q=` | Filmler (klasör bazında gruplu: CD1/CD2 tek kart) |
 | `GET /api/movies/files?group=` | Bir film grubunun dosyaları |
 | `GET /api/series/shows?q=` | Diziler (sezon/bölüm sayılarıyla) |
@@ -112,5 +114,10 @@ npm run tauri build         # release paketi
    iTunes Search API (key'siz) zinciriyle çözülür; `<app-data>/covers/`
    altında önbelleklenir. Albüm detayında yıl, tür ve ses kalitesi
    (örn. "44.1 kHz • 16 bit") gösterilir.
+   Film/dizi posterleri: film klasöründeki `poster.jpg` (Plex tarzı) →
+   **TMDB**. TMDB için ücretsiz API key gerekir (themoviedb.org →
+   Ayarlar → API → API Key v3); key ⚙ Ayarlar panelinden girilir ve
+   yalnızca backend'de kullanılır. Key girilene kadar posterler
+   placeholder olarak görünür.
 5. Telefonunuzdan `http://<bilgisayar-ip>:8080` adresini açın — aynı arayüz
    uzaktan kumanda olarak çalışır.

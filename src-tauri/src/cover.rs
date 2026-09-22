@@ -47,10 +47,17 @@ fn fnv1a(s: &str) -> u64 {
 }
 
 fn cache_file(covers_dir: &Path, artist: &str, album: &str, ext: &str) -> PathBuf {
-    covers_dir.join(format!(
-        "{:016x}.{ext}",
-        fnv1a(&format!("{artist}\u{1f}{album}"))
-    ))
+    cache_file_for_key(
+        covers_dir,
+        &format!("{artist}\u{1f}{album}"),
+        ext,
+    )
+}
+
+/// Genel anahtara göre önbellek dosyası.
+/// Müzik: "artist␟album", film: "movie␟başlık", dizi: "series␟başlık".
+pub fn cache_file_for_key(covers_dir: &Path, key: &str, ext: &str) -> PathBuf {
+    covers_dir.join(format!("{:016x}.{ext}", fnv1a(key)))
 }
 
 /// Gömülü kapağı önbelleğe yazar; dosya zaten varsa dokunmaz.
@@ -82,6 +89,35 @@ pub fn folder_cover(track_path: &Path) -> Option<PathBuf> {
     let dir = track_path.parent()?;
     for name in FOLDER_COVER_FILES {
         let p = dir.join(name);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// Film klasöründeki poster dosyasını arar (Plex/Jellyfin tarzı adlandırma):
+/// poster.jpg, folder.jpg, cover.jpg veya "<klasör-adı>-poster.jpg".
+/// TMDB'ye gitmeden önce ilk lokal kaynak.
+pub fn movie_folder_poster(folder: &Path) -> Option<PathBuf> {
+    const MOVIE_POSTER_FILES: &[&str] = &[
+        "poster.jpg",
+        "poster.jpeg",
+        "poster.png",
+        "folder.jpg",
+        "folder.png",
+        "cover.jpg",
+        "cover.png",
+    ];
+    for name in MOVIE_POSTER_FILES {
+        let p = folder.join(name);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    // "<klasör-adı>-poster.jpg" kuralı
+    if let Some(name) = folder.file_name() {
+        let p = folder.join(format!("{}-poster.jpg", name.to_string_lossy()));
         if p.is_file() {
             return Some(p);
         }

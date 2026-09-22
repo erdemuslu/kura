@@ -9,6 +9,7 @@ import { useState } from 'react';
 import {
   getMovieFiles,
   launchPlayerBatch,
+  posterUrlMovie,
   type LaunchResult,
   type MovieGroup,
 } from '../api/client';
@@ -87,6 +88,17 @@ export default function MoviesView({
               <span className="select-none text-4xl font-bold text-white/15 group-hover:text-white/25">
                 {m.title.trim().slice(0, 1).toUpperCase() || '?'}
               </span>
+              {/* Poster: klasör posteri → TMDB zinciri; 404'de gizlenir,
+                  gradient + başlık bilgisi yerinde kalır */}
+              <img
+                src={posterUrlMovie(m.title, m.folder_path)}
+                alt={m.title}
+                loading="lazy"
+                className="absolute inset-0 h-full w-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
               <div className="relative z-10 min-w-0">
                 <p className="truncate text-sm font-medium text-white drop-shadow">
                   {m.title}

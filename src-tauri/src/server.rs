@@ -58,11 +58,16 @@ pub struct MusicQuery {
     pub album: Option<String>,
 }
 
-/// `/api/cover` — albüm kapağı sorgu parametreleri.
+/// `/api/cover` — kapak/poster sorgu parametreleri.
+/// `kind`: "movie" | "series" (yoksa müzik: album+artist zorunlu).
 #[derive(Deserialize)]
 pub struct CoverQuery {
-    pub album: String,
-    pub artist: String,
+    pub kind: Option<String>,
+    pub album: Option<String>,
+    pub artist: Option<String>,
+    pub title: Option<String>,
+    /// Film için: lokal poster araması yapılacak klasör
+    pub folder: Option<String>,
 }
 
 /// Film/dizi tarayıcı uçları için ortak query parametreleri.
@@ -382,12 +387,29 @@ async fn cover(
     Query(q): Query<CoverQuery>,
     State(st): State<ServerState>,
 ) -> Response {
+    match q.kind.as_deref() {
+        Some("movie") => cover_movie(&q, &st).await,
+        Some("series") => cover_series(&q, &st).await,
+        _ => cover_music(&q, &st).await,
+    }
+}
+
+fn not_found_response() -> Response {
+    (StatusCode::NOT_FOUND, "").into_response()
+}
+
+/// Müzik kapağı: DB (taramada gömülü/klasör) → iTunes fallback.
+async fn cover_music(q: &CoverQuery, st: &ServerState) -> Response {
+    let (Some(album), Some(artist)) = (q.album.clone(), q.artist.clone()) else {
+        return not_found_response();
+    };
+
     // 1) DB'de kayıtlı kapak yolu
     let db_path = st.db_path.clone();
-    let (album, artist) = (q.album.clone(), q.artist.clone());
+    let (album_c, artist_c) = (album.clone(), artist.clone());
     let known: Option<String> = tokio::task::spawn_blocking(move || {
         let conn = db::open(&db_path)?;
-        db::cover_path_for_album(&conn, &album, &artist)
+        db::cover_path_for_album(&conn, &album_c, &artist_c)
     })
     .await
     .ok()
@@ -401,18 +423,18 @@ async fn cover(
     }
 
     // 2) iTunes fallback — "Bilinmeyen Albüm" için anlamsız, atla.
-    if q.album == db::UNKNOWN_ALBUM {
-        return (StatusCode::NOT_FOUND, "").into_response();
+    if album == db::UNKNOWN_ALBUM {
+        return not_found_response();
     }
 
     let covers = crate::cover::covers_dir(&st.db_path);
-    if let Some(cover_path) = crate::cover::fetch_itunes_cover(&covers, &q.artist, &q.album).await
+    if let Some(cover_path) = crate::cover::fetch_itunes_cover(&covers, &artist, &album).await
     {
         // Önbelleğe alındı → DB'ye de işle (sonraki istekler DB'den döner)
         let db_path = st.db_path.clone();
         let (album, artist, path_str) = (
-            q.album.clone(),
-            q.artist.clone(),
+            album.clone(),
+            artist.clone(),
             cover_path.to_string_lossy().to_string(),
         );
         let _ = tokio::task::spawn_blocking(move || {
@@ -426,7 +448,63 @@ async fn cover(
         }
     }
 
-    (StatusCode::NOT_FOUND, "").into_response()
+    not_found_response()
+}
+
+/// Film posteri: klasör posteri (Plex tarzı) → TMDB.
+async fn cover_movie(q: &CoverQuery, st: &ServerState) -> Response {
+    let Some(title) = q.title.clone() else {
+        return not_found_response();
+    };
+
+    // 1) Lokal klasör posteri
+    if let Some(folder) = q.folder.as_deref() {
+        if let Some(p) = crate::cover::movie_folder_poster(Path::new(folder)) {
+            if let Some((mime, bytes)) = read_image(&p) {
+                return image_response(mime, bytes);
+            }
+        }
+    }
+
+    // 2) TMDB (key ayarlanmamışsa 404 → frontend placeholder'a düşer)
+    if let Some(key) = tmdb_key(st).await {
+        let covers = crate::cover::covers_dir(&st.db_path);
+        if let Some(p) = crate::tmdb::fetch_movie_poster(&covers, &key, &title).await {
+            if let Some((mime, bytes)) = read_image(&p) {
+                return image_response(mime, bytes);
+            }
+        }
+    }
+    not_found_response()
+}
+
+/// Dizi posteri: TMDB.
+async fn cover_series(q: &CoverQuery, st: &ServerState) -> Response {
+    let Some(title) = q.title.clone() else {
+        return not_found_response();
+    };
+    if let Some(key) = tmdb_key(st).await {
+        let covers = crate::cover::covers_dir(&st.db_path);
+        if let Some(p) = crate::tmdb::fetch_series_poster(&covers, &key, &title).await {
+            if let Some((mime, bytes)) = read_image(&p) {
+                return image_response(mime, bytes);
+            }
+        }
+    }
+    not_found_response()
+}
+
+/// TMDB API key'i ayarlardan okur (boş/ayarlanmamış → None).
+async fn tmdb_key(st: &ServerState) -> Option<String> {
+    let db_path = st.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::get_setting_opt(&conn, "tmdb_api_key")
+    })
+    .await
+    .ok()?
+    .ok()?
+    .filter(|k| !k.is_empty())
 }
 
 async fn movies_route(

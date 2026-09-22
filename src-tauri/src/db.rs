@@ -220,6 +220,20 @@ pub fn get_setting(conn: &Connection, key: &str) -> Result<String, String> {
     .map_err(|e| e.to_string())
 }
 
+/// Ayarı okur; kayıt yoksa None döner (get_setting'in Option varyantı).
+pub fn get_setting_opt(conn: &Connection, key: &str) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT value FROM app_settings WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .map(Some)
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        e => Err(e.to_string()),
+    })
+}
+
 pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
     conn.execute(
         "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
