@@ -124,14 +124,31 @@ export class ApiAuthError extends Error {
 }
 
 /** Masaüstünde hangi oynatıcıların seçilebildiği (Rust tarafındaki beyaz liste ile eşleşir). */
-export const PLAYERS: { id: string; label: string; audio?: boolean }[] = [
+export interface PlayerOption {
+  id: string;
+  label: string;
+  isAudio?: boolean;
+  isVideo?: boolean;
+}
+
+export const AUDIO_PLAYERS: PlayerOption[] = [
+  { id: 'in_app', label: 'Gömülü Oynatıcı' },
   { id: 'system', label: 'Sistem Varsayılanı' },
+  { id: 'Audirvana', label: 'Audirvana' },
+  { id: 'foobar2000', label: 'foobar2000' },
   { id: 'VLC', label: 'VLC' },
   { id: 'IINA', label: 'IINA' },
-  { id: 'Audirvana', label: 'Audirvana' },
-  { id: 'foobar2000', label: 'foobar2000 (ses)', audio: true },
   { id: 'QuickTime Player', label: 'QuickTime Player' },
 ];
+
+export const VIDEO_PLAYERS: PlayerOption[] = [
+  { id: 'system', label: 'Sistem Varsayılanı' },
+  { id: 'IINA', label: 'IINA' },
+  { id: 'VLC', label: 'VLC' },
+  { id: 'QuickTime Player', label: 'QuickTime Player' },
+];
+
+export const PLAYERS = AUDIO_PLAYERS;
 
 export function isRunningInTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -335,6 +352,64 @@ export async function launchPlayerBatch(
     }),
   });
   return res.json();
+}
+
+/**
+ * Medya dosyası akış URL'si — masaüstünde de uzaktan da aynı Axum sunucusu (/api/stream) üzerinden servis edilir.
+ * HTTP Range akışını ve şarkı içi sarmayı (scrubbing) destekler.
+ */
+export function streamUrl(filePath: string): string {
+  const base = isRunningInTauri() ? 'http://localhost:8080' : '';
+  const params = new URLSearchParams({ path: filePath });
+  const token = getRemoteToken();
+  if (token) params.set('token', token);
+  return `${base}/api/stream?${params.toString()}`;
+}
+
+/** Oynatıcı ayarını getirir (IPC veya REST / localStorage fallback). */
+export async function getPlayerSetting(kind: 'audio' | 'video'): Promise<string> {
+  const defaultPlayer = kind === 'audio' ? 'in_app' : 'system';
+  if (isRunningInTauri()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const val = await invoke<string | null>('get_player_setting', { kind });
+      if (val) return val;
+    } catch {
+      // IPC hatası durumunda fallback
+    }
+  } else {
+    try {
+      const res = await restFetch(`/api/settings/player?kind=${kind}`);
+      const data = (await res.json()) as { player: string | null };
+      if (data.player) return data.player;
+    } catch {
+      // Offline / auth hatası
+    }
+  }
+  return localStorage.getItem(`lmh-player-${kind}`) ?? defaultPlayer;
+}
+
+/** Oynatıcı ayarını kaydeder (IPC, REST ve localStorage). */
+export async function setPlayerSetting(kind: 'audio' | 'video', id: string): Promise<void> {
+  localStorage.setItem(`lmh-player-${kind}`, id);
+  if (isRunningInTauri()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('set_player_setting', { kind, id });
+    } catch {
+      // IPC hatası yoksayılır
+    }
+  } else {
+    try {
+      await restFetch('/api/settings/player', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, id }),
+      });
+    } catch {
+      // Offline / auth hatası
+    }
+  }
 }
 
 /**

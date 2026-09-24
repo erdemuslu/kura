@@ -15,11 +15,33 @@ use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
+use tokio_util::io::ReaderStream;
 
 #[derive(Clone)]
 pub struct ServerState {
     pub db_path: PathBuf,
     pub dist: PathBuf,
+}
+
+/// `/api/stream` — medya dosyası HTTP Range akışı sorgu parametreleri.
+#[derive(Deserialize)]
+pub struct StreamQuery {
+    pub path: Option<String>,
+    pub id: Option<String>,
+}
+
+/// `/api/settings/player` sorgu parametreleri.
+#[derive(Deserialize)]
+pub struct PlayerSettingQuery {
+    pub kind: String,
+}
+
+#[derive(Deserialize)]
+pub struct SetPlayerSettingPayload {
+    pub kind: String,
+    pub id: String,
 }
 
 #[derive(Deserialize)]
@@ -174,6 +196,11 @@ pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
         .route("/api/series/seasons", get(series_seasons))
         .route("/api/series/episodes", get(series_episodes))
         .route("/api/open-batch", post(open_batch))
+        .route("/api/stream", get(stream_media))
+        .route(
+            "/api/settings/player",
+            get(get_player_setting_route).post(set_player_setting_route),
+        )
         .fallback_service(ServeDir::new(static_root).append_index_html_on_directories(true))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -760,3 +787,351 @@ async fn open_batch(
         )),
     }
 }
+
+#[derive(Serialize)]
+pub struct PlayerSettingResponse {
+    pub kind: String,
+    pub player: Option<String>,
+}
+
+async fn get_player_setting_route(
+    Query(q): Query<PlayerSettingQuery>,
+    State(st): State<ServerState>,
+) -> Result<Json<PlayerSettingResponse>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    let kind = q.kind.clone();
+    let val = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::get_setting_opt(&conn, &format!("player_{kind}"))
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    Ok(Json(PlayerSettingResponse {
+        kind: q.kind,
+        player: val,
+    }))
+}
+
+async fn set_player_setting_route(
+    State(st): State<ServerState>,
+    headers: HeaderMap,
+    Json(payload): Json<SetPlayerSettingPayload>,
+) -> Result<Json<ApiResponse>, (StatusCode, Json<ApiResponse>)> {
+    check_auth(&st, &headers).await?;
+    let db_path = st.db_path.clone();
+    let kind = payload.kind.clone();
+    let id = payload.id.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::set_setting(&conn, &format!("player_{kind}"), &id)
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    Ok(Json(ApiResponse {
+        success: true,
+        message: "Oynatıcı ayarı kaydedildi".into(),
+    }))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ByteRange {
+    FromTo(u64, u64),
+    From(u64),
+    Suffix(u64),
+}
+
+fn parse_range_header(header: &str) -> Option<ByteRange> {
+    let header = header.trim();
+    if !header.starts_with("bytes=") {
+        return None;
+    }
+    let spec = &header["bytes=".len()..].trim();
+    let spec = spec.split(',').next()?.trim();
+    if let Some(suffix) = spec.strip_prefix('-') {
+        let n: u64 = suffix.parse().ok()?;
+        Some(ByteRange::Suffix(n))
+    } else {
+        let mut parts = spec.splitn(2, '-');
+        let start_str = parts.next()?.trim();
+        let end_str = parts.next()?.trim();
+        let start: u64 = start_str.parse().ok()?;
+        if end_str.is_empty() {
+            Some(ByteRange::From(start))
+        } else {
+            let end: u64 = end_str.parse().ok()?;
+            Some(ByteRange::FromTo(start, end))
+        }
+    }
+}
+
+fn mime_for_path(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("mp3") => "audio/mpeg",
+        Some("flac") => "audio/flac",
+        Some("m4a") => "audio/mp4",
+        Some("aac") => "audio/aac",
+        Some("wav") => "audio/wav",
+        Some("ogg") => "audio/ogg",
+        Some("opus") => "audio/opus",
+        Some("aiff") | Some("aif") => "audio/aiff",
+        Some("wma") => "audio/x-ms-wma",
+        Some("mp4") => "video/mp4",
+        Some("mkv") => "video/x-matroska",
+        Some("webm") => "video/webm",
+        Some("mov") => "video/quicktime",
+        _ => "application/octet-stream",
+    }
+}
+
+/// `/api/stream` — medya dosyası HTTP Range akışı (RFC 7233).
+/// Gömülü ses oynatıcı için ses dosyalarını kesintisiz ve sarılabilir (seekable)
+/// olarak parça parça (206 Partial Content) akıtır.
+async fn stream_media(
+    Query(q): Query<StreamQuery>,
+    headers: HeaderMap,
+    State(st): State<ServerState>,
+) -> Response {
+    let db_path = st.db_path.clone();
+    let q_path = q.path.clone();
+    let q_id = q.id.clone();
+
+    // 1) Dosya yolunu belirle ve veritabanı indeksinde var olduğunu doğrula
+    let resolved_path = tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
+        let conn = db::open(&db_path)?;
+        if let Some(ref p) = q_path {
+            if db::path_exists(&conn, p)? {
+                return Ok(Some(p.clone()));
+            }
+        }
+        if let Some(ref id) = q_id {
+            let found = conn
+                .query_row(
+                    "SELECT file_path FROM media_items WHERE id = ?1",
+                    rusqlite::params![id],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok();
+            if let Some(ref p) = found {
+                if db::path_exists(&conn, p)? {
+                    return Ok(Some(p.clone()));
+                }
+            }
+        }
+        Ok(None)
+    })
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .flatten();
+
+    let Some(file_path) = resolved_path else {
+        return (
+            StatusCode::NOT_FOUND,
+            "Medya dosyası bulunamadı veya indekste kayıtlı değil",
+        )
+            .into_response();
+    };
+
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return (
+            StatusCode::NOT_FOUND,
+            "Dosya diskte bulunamadı. Disk çevrimdışı olabilir.",
+        )
+            .into_response();
+    }
+
+    let Ok(metadata) = tokio::fs::metadata(&path).await else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Dosya metadata okunamadı",
+        )
+            .into_response();
+    };
+
+    let file_size = metadata.len();
+    let mime_type = mime_for_path(&path);
+
+    if file_size == 0 {
+        return (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, mime_type.to_string()),
+                (header::CONTENT_LENGTH, "0".to_string()),
+                (header::ACCEPT_RANGES, "bytes".to_string()),
+            ],
+            axum::body::Body::empty(),
+        )
+            .into_response();
+    }
+
+    // Range başlığı varsa kısmi içerik (206 Partial Content) sun
+    if let Some(range_header) = headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
+        if let Some(range) = parse_range_header(range_header) {
+            let (start, end) = match range {
+                ByteRange::FromTo(s, e) => {
+                    if s > e || s >= file_size {
+                        return (
+                            StatusCode::RANGE_NOT_SATISFIABLE,
+                            [
+                                (header::CONTENT_RANGE, format!("bytes */{file_size}")),
+                                (header::ACCEPT_RANGES, "bytes".to_string()),
+                            ],
+                            axum::body::Body::empty(),
+                        )
+                            .into_response();
+                    }
+                    (s, e.min(file_size - 1))
+                }
+                ByteRange::From(s) => {
+                    if s >= file_size {
+                        return (
+                            StatusCode::RANGE_NOT_SATISFIABLE,
+                            [
+                                (header::CONTENT_RANGE, format!("bytes */{file_size}")),
+                                (header::ACCEPT_RANGES, "bytes".to_string()),
+                            ],
+                            axum::body::Body::empty(),
+                        )
+                            .into_response();
+                    }
+                    (s, file_size - 1)
+                }
+                ByteRange::Suffix(n) => {
+                    if n == 0 {
+                        return (
+                            StatusCode::RANGE_NOT_SATISFIABLE,
+                            [
+                                (header::CONTENT_RANGE, format!("bytes */{file_size}")),
+                                (header::ACCEPT_RANGES, "bytes".to_string()),
+                            ],
+                            axum::body::Body::empty(),
+                        )
+                            .into_response();
+                    }
+                    if n >= file_size {
+                        (0, file_size - 1)
+                    } else {
+                        (file_size - n, file_size - 1)
+                    }
+                }
+            };
+
+            let mut file = match File::open(&path).await {
+                Ok(f) => f,
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Dosya açılamadı: {e}"),
+                    )
+                        .into_response()
+                }
+            };
+
+            if let Err(e) = file.seek(SeekFrom::Start(start)).await {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Arama hatası: {e}"),
+                )
+                    .into_response();
+            }
+
+            let content_length = end - start + 1;
+            let take_reader = file.take(content_length);
+            let stream = ReaderStream::new(take_reader);
+            let body = axum::body::Body::from_stream(stream);
+
+            return (
+                StatusCode::PARTIAL_CONTENT,
+                [
+                    (header::CONTENT_TYPE, mime_type.to_string()),
+                    (header::ACCEPT_RANGES, "bytes".to_string()),
+                    (header::CONTENT_LENGTH, content_length.to_string()),
+                    (
+                        header::CONTENT_RANGE,
+                        format!("bytes {start}-{end}/{file_size}"),
+                    ),
+                ],
+                body,
+            )
+                .into_response();
+        }
+    }
+
+    // Range başlığı yoksa tüm dosyayı akıt
+    let file = match File::open(&path).await {
+        Ok(f) => f,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Dosya açılamadı: {e}"),
+            )
+                .into_response()
+        }
+    };
+    let stream = ReaderStream::new(file);
+    let body = axum::body::Body::from_stream(stream);
+
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, mime_type.to_string()),
+            (header::ACCEPT_RANGES, "bytes".to_string()),
+            (header::CONTENT_LENGTH, file_size.to_string()),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_parse_range_header() {
+        assert_eq!(
+            parse_range_header("bytes=0-499"),
+            Some(ByteRange::FromTo(0, 499))
+        );
+        assert_eq!(
+            parse_range_header("bytes=500-"),
+            Some(ByteRange::From(500))
+        );
+        assert_eq!(
+            parse_range_header("bytes=-500"),
+            Some(ByteRange::Suffix(500))
+        );
+        assert_eq!(
+            parse_range_header("bytes=100-200, 300-400"),
+            Some(ByteRange::FromTo(100, 200))
+        );
+        assert_eq!(parse_range_header("invalid"), None);
+        assert_eq!(parse_range_header("bytes="), None);
+        assert_eq!(parse_range_header("bytes=abc-"), None);
+    }
+
+    #[test]
+    fn test_mime_for_path() {
+        assert_eq!(mime_for_path(Path::new("song.mp3")), "audio/mpeg");
+        assert_eq!(mime_for_path(Path::new("track.flac")), "audio/flac");
+        assert_eq!(mime_for_path(Path::new("audio.m4a")), "audio/mp4");
+        assert_eq!(mime_for_path(Path::new("sound.wav")), "audio/wav");
+        assert_eq!(mime_for_path(Path::new("music.ogg")), "audio/ogg");
+        assert_eq!(mime_for_path(Path::new("stream.opus")), "audio/opus");
+        assert_eq!(mime_for_path(Path::new("movie.mkv")), "video/x-matroska");
+        assert_eq!(mime_for_path(Path::new("clip.mp4")), "video/mp4");
+        assert_eq!(mime_for_path(Path::new("unknown.xyz")), "application/octet-stream");
+    }
+}
+

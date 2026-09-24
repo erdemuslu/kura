@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import AudioPlayerBar from './components/AudioPlayerBar';
 import MoviesView from './components/MoviesView';
 import MusicView from './components/MusicView';
 import PlayerSelect from './components/PlayerSelect';
@@ -9,12 +10,15 @@ import SettingsPanel from './components/SettingsPanel';
 import StorageBadge from './components/StorageBadge';
 import {
   ApiAuthError,
+  getPlayerSetting,
   getRemoteInfo,
   isRunningInTauri,
+  setPlayerSetting,
   setRemoteToken,
   type MediaType,
   type RemoteInfo,
 } from './api/client';
+import { AudioPlayerProvider, useAudioPlayer } from './context/AudioPlayerContext';
 import { useDisks } from './hooks/useMedia';
 
 const TABS: { id: MediaType; label: string }[] = [
@@ -23,14 +27,17 @@ const TABS: { id: MediaType; label: string }[] = [
   { id: 'music', label: 'Müzik' },
 ];
 
-export default function App() {
+function MainLayout() {
   const [tab, setTab] = useState<MediaType>('movie');
   const [query, setQuery] = useState('');
-  const [player, setPlayer] = useState('system');
+  const [audioPlayer, setAudioPlayer] = useState('in_app');
+  const [videoPlayer, setVideoPlayer] = useState('system');
   const [playingPath, setPlayingPath] = useState<string | null>(null);
   const [remote, setRemote] = useState<RemoteInfo | null>(null);
   const [tokenInput, setTokenInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+
+  const { currentTrack } = useAudioPlayer();
 
   // Her sekme kendi görünümlerinin sorgularını yapar (Movies/Series/MusicView);
   // App yalnızca disk durumunu çeker. 401 (token) hatası da buradan yakalanır.
@@ -43,6 +50,29 @@ export default function App() {
       .then((info) => setRemote(info))
       .catch(() => setRemote(null));
   }, []);
+
+  // Oynatıcı ayarlarını yükle
+  useEffect(() => {
+    getPlayerSetting('audio')
+      .then((p) => setAudioPlayer(p))
+      .catch(() => {});
+    getPlayerSetting('video')
+      .then((p) => setVideoPlayer(p))
+      .catch(() => {});
+  }, []);
+
+  const isMusicTab = tab === 'music';
+  const activePlayer = isMusicTab ? audioPlayer : videoPlayer;
+
+  const handlePlayerChange = (val: string) => {
+    if (isMusicTab) {
+      setAudioPlayer(val);
+      setPlayerSetting('audio', val).catch(() => {});
+    } else {
+      setVideoPlayer(val);
+      setPlayerSetting('video', val).catch(() => {});
+    }
+  };
 
   // Token doğrulaması açıksa tarayıcıdan ilk istek 401 döner —
   // App'in disks sorgusu bunu yakalar ve token girişi banner'ı gösterir.
@@ -59,7 +89,11 @@ export default function App() {
             <h1 className="text-lg font-semibold tracking-tight">Local Media Hub</h1>
             {disks.data?.map((d) => <StorageBadge key={d.label} disk={d} />)}
             <div className="ml-auto flex items-center gap-3">
-              <PlayerSelect value={player} onChange={setPlayer} />
+              <PlayerSelect
+                value={activePlayer}
+                kind={isMusicTab ? 'audio' : 'video'}
+                onChange={handlePlayerChange}
+              />
               {isRunningInTauri() && (
                 <button
                   type="button"
@@ -110,7 +144,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-4 p-4">
+      <main className={`mx-auto max-w-7xl space-y-4 p-4 ${currentTrack ? 'pb-28' : ''}`}>
         {authError && (
           <section className="rounded-xl bg-amber-500/10 p-4 text-sm text-amber-200 ring-1 ring-amber-500/40">
             <p className="font-medium">Uzaktan erişim token’ı gerekli.</p>
@@ -178,7 +212,7 @@ export default function App() {
 
         {tab === 'movie' && (
           <MoviesView
-            player={player}
+            player={videoPlayer}
             query={query}
             playingLabel={playingPath}
             onPlayed={setPlayingPath}
@@ -186,7 +220,7 @@ export default function App() {
         )}
         {tab === 'series' && (
           <SeriesView
-            player={player}
+            player={videoPlayer}
             query={query}
             playingPath={playingPath}
             onPlayed={setPlayingPath}
@@ -194,13 +228,23 @@ export default function App() {
         )}
         {tab === 'music' && (
           <MusicView
-            player={player}
+            player={audioPlayer}
             query={query}
             playingPath={playingPath}
             onPlayed={setPlayingPath}
           />
         )}
       </main>
+
+      <AudioPlayerBar />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AudioPlayerProvider>
+      <MainLayout />
+    </AudioPlayerProvider>
   );
 }

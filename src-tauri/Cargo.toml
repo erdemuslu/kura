@@ -25,6 +25,8 @@ lofty = "0.20"
 uuid = { version = "1", features = ["v4"] }
 # Albüm kapağı iTunes fallback'i için (key'siz, rustls — OpenSSL gerekmez)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Gömülü müzik player: /api/stream HTTP Range akışı için
+tokio-util = { version = "0.7", features = ["io"] }
 
 [profile.release]
 strip = true

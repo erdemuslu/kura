@@ -20,13 +20,93 @@ pub fn is_valid_player(target_app: &str) -> bool {
 }
 
 pub fn execute_player(file_path: &str, target_app: &str) -> Result<(), String> {
+    execute_player_with_subtitle(file_path, target_app, None)
+}
+
+/// Altyazı destekli başlatma. VLC/IINA'ya altyazı açıkça geçirilir
+/// (`--sub-file` / `--mpv-sub-file`) — playerın otomatik yüklemesi kapalı
+/// olsa bile altyazı garantili gelir. Diğer playerlar (ve sistem
+/// varsayılanı) aynı adlı altyazıyı otomatik yükleyen davranışa bırakılır.
+pub fn execute_player_with_subtitle(
+    file_path: &str,
+    target_app: &str,
+    subtitle_path: Option<&str>,
+) -> Result<(), String> {
     if !is_valid_player(target_app) {
         return Err(format!("Desteklenmeyen oynatıcı: {target_app}"));
     }
     if !Path::new(file_path).exists() {
         return Err("Dosya bulunamadı. Disk çevrimdışı olabilir.".into());
     }
-    launch(file_path, target_app)
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = Command::new("open");
+        if target_app != "system" {
+            cmd.arg("-a").arg(target_app);
+        }
+        // Altyazıyı destekleyen playerlara argüman olarak geçir
+        match (subtitle_path, target_app) {
+            (Some(sub), "VLC") => {
+                cmd.arg("--args").arg("--sub-file").arg(sub);
+            }
+            (Some(sub), "IINA") => {
+                cmd.arg("--args").arg(format!("--mpv-sub-file={sub}"));
+            }
+            _ => {}
+        }
+        let status = cmd
+            .arg(file_path)
+            .status()
+            .map_err(|e| format!("Komut çalıştırılamadı: {e}"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Uygulama açılamadı".into())
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let _ = subtitle_path; // Windows'ta otomatik yükleme davranışına bırakılır
+        let status = if target_app == "system" {
+            Command::new("cmd")
+                .args(["/C", "start", "", file_path])
+                .status()
+                .map_err(|e| format!("Komut çalıştırılamadı: {e}"))?
+        } else {
+            Command::new(target_app)
+                .arg(file_path)
+                .status()
+                .map_err(|e| format!("Komut çalıştırılamadı: {e}"))?
+        };
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Uygulama açılamadı".into())
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = subtitle_path; // Linux'ta otomatik yükleme davranışına bırakılır
+        let status = if target_app == "system" {
+            Command::new("xdg-open")
+                .arg(file_path)
+                .status()
+                .map_err(|e| format!("Komut çalıştırılamadı: {e}"))?
+        } else {
+            Command::new(target_app)
+                .arg(file_path)
+                .status()
+                .map_err(|e| format!("Komut çalıştırılamadı: {e}"))?
+        };
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Uygulama açılamadı".into())
+        }
+    }
 }
 
 /// Birden çok dosyayı tek bir .m3u8 playlist dosyasına yazıp oynatıcıya

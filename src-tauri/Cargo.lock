@@ -1955,6 +1955,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tokio",
+ "tokio-util",
  "tower-http 0.5.2",
  "uuid",
  "walkdir",

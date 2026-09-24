@@ -259,9 +259,11 @@ pub fn scan_directory_with_progress(
         files.push(entry.into_path());
     }
 
-    // Altyazı haritası: klasör → { dosya adı (stem) → adet }
-    let mut subs: std::collections::HashMap<String, std::collections::HashMap<String, i64>> =
-        std::collections::HashMap::new();
+    // Altyazı haritası: klasör → { dosya adı (stem) → altyazı yolları }
+    let mut subs: std::collections::HashMap<
+        String,
+        std::collections::HashMap<String, Vec<std::path::PathBuf>>,
+    > = std::collections::HashMap::new();
     for path in &files {
         let ext = path
             .extension()
@@ -273,8 +275,8 @@ pub fn scan_directory_with_progress(
                 subs.entry(dir.to_string_lossy().to_string())
                     .or_default()
                     .entry(stem.to_string_lossy().to_string())
-                    .and_modify(|c| *c += 1)
-                    .or_insert(1);
+                    .or_default()
+                    .push(path.clone());
             }
         }
     }
@@ -368,6 +370,7 @@ pub fn scan_directory_with_progress(
                     episode: None,
                     folder_path: None,
                     subtitle_count: 0,
+                    subtitle_path: None,
                     genre: m.genre,
                     sample_rate: m.sample_rate,
                     bit_depth: m.bit_depth,
@@ -379,12 +382,26 @@ pub fn scan_directory_with_progress(
                 let folder_path = path
                     .parent()
                     .map(|p| p.to_string_lossy().to_string());
-                // Aynı adlı altyazı sayısı (klasör bazlı haritadan)
-                let subtitle_count = path
+                // Aynı adlı altyazılar: sayı + en iyi eşleşme (".tr." öncelikli)
+                let (subtitle_count, subtitle_path) = path
                     .parent()
                     .and_then(|d| subs.get(&d.to_string_lossy().to_string()))
-                    .and_then(|m| m.get(&stem).copied())
-                    .unwrap_or(0);
+                    .and_then(|m| m.get(&stem))
+                    .map(|paths| {
+                        let picked = paths
+                            .iter()
+                            .find(|p| {
+                                p.file_name()
+                                    .map(|n| n.to_string_lossy().to_ascii_lowercase().contains(".tr."))
+                                    .unwrap_or(false)
+                            })
+                            .or_else(|| paths.first());
+                        (
+                            paths.len() as i64,
+                            picked.map(|p| p.to_string_lossy().to_string()),
+                        )
+                    })
+                    .unwrap_or((0, None));
 
                 if let Some((season, episode, show_prefix)) = parse_episode_pattern(&stem) {
                     // Dizi: dosya adında SxxExx / xExx deseni bulundu
@@ -407,6 +424,7 @@ pub fn scan_directory_with_progress(
                         episode: Some(episode),
                         folder_path,
                         subtitle_count,
+                        subtitle_path,
                         file_path,
                         file_size: meta.len() as i64,
                         disk_label: summary.disk_label.clone(),
@@ -443,6 +461,7 @@ pub fn scan_directory_with_progress(
                         episode: None,
                         folder_path,
                         subtitle_count,
+                        subtitle_path,
                         file_path,
                         file_size: meta.len() as i64,
                         disk_label: summary.disk_label.clone(),

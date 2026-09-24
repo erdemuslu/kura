@@ -19,6 +19,7 @@ import {
   type ArtistSummary,
   type MediaItem,
 } from '../api/client';
+import { useAudioPlayer } from '../context/AudioPlayerContext';
 import { useAlbums, useAlbumTracks, useArtists } from '../hooks/useMedia';
 import { formatDuration, formatQuality } from '../lib/format';
 
@@ -116,6 +117,8 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
   const [batchLabel, setBatchLabel] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
+  const { currentTrack, isPlaying, playTrack, playQueue } = useAudioPlayer();
+
   const showAlbums = level.kind !== 'top' || level.view === 'albums';
   const artists = useArtists(query);
   // Sanatçı seviyesindeysek o sanatçının albümleri, yoksa tüm albümler
@@ -128,6 +131,11 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
 
   const playSingle = async (item: MediaItem) => {
     onPlayed(item.file_path);
+    if (player === 'in_app') {
+      playTrack(item, tracks.data ?? [item]);
+      setFeedback({ success: true, message: `Çalınıyor: ${item.title}` });
+      return;
+    }
     setFeedback(await launchPlayer({ filePath: item.file_path, targetApp: player }));
   };
 
@@ -139,6 +147,15 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
       const list = await fetchTracks();
       if (list.length === 0) {
         setFeedback({ success: false, message: `"${label}" için çalınacak şarkı bulunamadı` });
+        return;
+      }
+      if (player === 'in_app') {
+        playQueue(list, 0);
+        onPlayed(list[0]?.file_path ?? null);
+        setFeedback({
+          success: true,
+          message: `"${label}" çalma sırasına eklendi (${list.length} parça)`,
+        });
         return;
       }
       const result = await launchPlayerBatch(
@@ -331,28 +348,41 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
             <p className="px-4 py-6 text-sm text-slate-400">Yüklenıyor…</p>
           ) : (
             <div className="divide-y divide-slate-800">
-              {tracks.data?.map((t, i) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => playSingle(t)}
-                  title={t.file_path}
-                  className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition hover:bg-slate-800/60 ${
-                    playingPath === t.file_path ? 'bg-emerald-500/10' : ''
-                  }`}
-                >
-                  <span className="w-8 shrink-0 text-right font-mono text-xs text-slate-500">
-                    {t.track_number ?? i + 1}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-slate-100">{t.title}</span>
-                  {(() => {
-                    const q = formatQuality(t);
-                    return q ? (
-                      <span className="hidden shrink-0 rounded bg-slate-700/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 md:inline">
-                        {q}
-                      </span>
-                    ) : null;
-                  })()}
+              {tracks.data?.map((t, i) => {
+                const isCurrentInApp = player === 'in_app' && currentTrack?.file_path === t.file_path;
+                const isPlayingRow = isCurrentInApp || playingPath === t.file_path;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => playSingle(t)}
+                    title={t.file_path}
+                    className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition hover:bg-slate-800/60 ${
+                      isPlayingRow ? 'bg-sky-500/15' : ''
+                    }`}
+                  >
+                    <span className="w-8 shrink-0 text-right font-mono text-xs text-slate-500">
+                      {isCurrentInApp ? (
+                        <span className="text-sky-400 font-bold">{isPlaying ? '▶' : '⏸'}</span>
+                      ) : (
+                        t.track_number ?? i + 1
+                      )}
+                    </span>
+                    <span
+                      className={`min-w-0 flex-1 truncate ${
+                        isCurrentInApp ? 'font-semibold text-sky-200' : 'text-slate-100'
+                      }`}
+                    >
+                      {t.title}
+                    </span>
+                    {(() => {
+                      const q = formatQuality(t);
+                      return q ? (
+                        <span className="hidden shrink-0 rounded bg-slate-700/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 md:inline">
+                          {q}
+                        </span>
+                      ) : null;
+                    })()}
                   {t.year ? (
                     <span className="hidden shrink-0 text-xs text-slate-500 sm:inline">
                       {t.year}
@@ -362,7 +392,8 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
                     {formatDuration(t.duration)}
                   </span>
                 </button>
-              ))}
+              );
+            })}
             </div>
           )}
         </section>

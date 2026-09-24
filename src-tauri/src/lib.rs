@@ -39,7 +39,8 @@ pub struct RemoteInfo {
 }
 
 /// Medyayı harici oynatıcıda başlatır (masaüstü IPC yolu).
-/// Yalnızca indekste kayıtlı dosyalar başlatılabilir.
+/// Yalnızca indekste kayıtlı dosyalar başlatılabilir; videolarda kayıtlı
+/// altyazı VLC/IINA'ya açıkça geçirilir.
 #[tauri::command]
 async fn open_media(
     file_path: String,
@@ -47,15 +48,18 @@ async fn open_media(
     state: tauri::State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let db_path = state.db_path.clone();
-    tokio::task::spawn_blocking(move || -> Result<(), String> {
+    let fp = file_path.clone();
+    let subtitle = tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
         let conn = db::open(&db_path)?;
-        if !db::path_exists(&conn, &file_path)? {
+        if !db::path_exists(&conn, &fp)? {
             return Err("Dosya indekste bulunamadı. Önce dizini tarayın.".into());
         }
-        runner::execute_player(&file_path, &target_app)
+        db::subtitle_for_path(&conn, &fp)
     })
     .await
     .map_err(|e| e.to_string())??;
+
+    runner::execute_player_with_subtitle(&file_path, &target_app, subtitle.as_deref())?;
 
     Ok(serde_json::json!({ "success": true, "message": "Medya başlatıldı" }))
 }
@@ -410,6 +414,37 @@ async fn set_tmdb_api_key(
     .map_err(|e| e.to_string())?
 }
 
+/// Oynatıcı ataması: tipe ("video" | "audio") göre kalıcı player.
+#[tauri::command]
+async fn get_player_setting(
+    kind: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::get_setting_opt(&conn, &format!("player_{kind}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Oynatıcı atamasını kaydeder.
+#[tauri::command]
+async fn set_player_setting(
+    kind: String,
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::set_setting(&conn, &format!("player_{kind}"), &id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Native klasör seçme diyaloğu (ScanPanel "Gözat…" butonu)
@@ -454,6 +489,8 @@ pub fn run() {
             regenerate_remote_token,
             get_tmdb_api_key,
             set_tmdb_api_key,
+            get_player_setting,
+            set_player_setting,
             list_movies,
             movie_files,
             list_shows,

@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS media_items (
     episode INTEGER,
     folder_path TEXT,                  -- film/dizi dosyasının üst klasörü
     subtitle_count INTEGER NOT NULL DEFAULT 0,
+    subtitle_path TEXT,               -- en iyi eşleşen altyazının tam yolu
     genre TEXT,
     sample_rate INTEGER,                -- Hz (44100, 48000, …)
     bit_depth INTEGER,                 -- 16, 24, …
@@ -64,6 +65,7 @@ pub struct MediaItem {
     pub episode: Option<i64>,
     pub folder_path: Option<String>,
     pub subtitle_count: i64,
+    pub subtitle_path: Option<String>,
     pub genre: Option<String>,
     pub sample_rate: Option<i64>,
     pub bit_depth: Option<i64>,
@@ -92,6 +94,7 @@ pub struct NewMediaItem {
     pub episode: Option<i64>,
     pub folder_path: Option<String>,
     pub subtitle_count: i64,
+    pub subtitle_path: Option<String>,
     pub genre: Option<String>,
     pub sample_rate: Option<i64>,
     pub bit_depth: Option<i64>,
@@ -186,6 +189,7 @@ fn ensure_columns(conn: &Connection) -> Result<(), String> {
         ("episode", "INTEGER"),
         ("folder_path", "TEXT"),
         ("subtitle_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("subtitle_path", "TEXT"),
         ("genre", "TEXT"),
         ("sample_rate", "INTEGER"),
         ("bit_depth", "INTEGER"),
@@ -281,10 +285,10 @@ pub fn upsert_media(conn: &Connection, item: &NewMediaItem) -> Result<(), String
         "INSERT INTO media_items
              (id, title, artist, album, media_type, file_path, file_size, disk_label,
               format, duration, track_number, disc_number, year, show_title, season,
-              episode, folder_path, subtitle_count, genre, sample_rate, bit_depth,
-              channels, cover_image_path)
+              episode, folder_path, subtitle_count, subtitle_path, genre, sample_rate,
+              bit_depth, channels, cover_image_path)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
+                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
          ON CONFLICT(file_path) DO UPDATE SET
              title = excluded.title,
              artist = excluded.artist,
@@ -302,6 +306,7 @@ pub fn upsert_media(conn: &Connection, item: &NewMediaItem) -> Result<(), String
              episode = excluded.episode,
              folder_path = excluded.folder_path,
              subtitle_count = excluded.subtitle_count,
+             subtitle_path = excluded.subtitle_path,
              genre = excluded.genre,
              sample_rate = excluded.sample_rate,
              bit_depth = excluded.bit_depth,
@@ -327,6 +332,7 @@ pub fn upsert_media(conn: &Connection, item: &NewMediaItem) -> Result<(), String
             item.episode,
             item.folder_path,
             item.subtitle_count,
+            item.subtitle_path,
             item.genre,
             item.sample_rate,
             item.bit_depth,
@@ -347,6 +353,20 @@ pub fn path_exists(conn: &Connection, file_path: &str) -> Result<bool, String> {
     )
     .map(|c| c > 0)
     .map_err(|e| e.to_string())
+}
+
+/// Bir video dosyasının kayıtlı en iyi altyazı yolu (harici player'a geçirilir).
+pub fn subtitle_for_path(conn: &Connection, file_path: &str) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT subtitle_path FROM media_items WHERE file_path = ?1",
+        params![file_path],
+        |row| row.get(0),
+    )
+    .map(Some)
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        e => Err(e.to_string()),
+    })
 }
 
 /// Kütüphane sorgusu: tür filtresi (opsiyonel) + başlıkta arama + sayfalama.
@@ -387,8 +407,8 @@ pub fn query_library(
 const MEDIA_COLS: &str = "id, title, artist, album, media_type, file_path, file_size,
                           disk_label, format, duration, track_number, disc_number, year,
                           show_title, season, episode, folder_path, subtitle_count,
-                          genre, sample_rate, bit_depth, channels, cover_image_path,
-                          created_at, updated_at";
+                          subtitle_path, genre, sample_rate, bit_depth, channels,
+                          cover_image_path, created_at, updated_at";
 
 fn map_media_item(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
     Ok(MediaItem {
@@ -410,13 +430,14 @@ fn map_media_item(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
         episode: row.get(15)?,
         folder_path: row.get(16)?,
         subtitle_count: row.get(17)?,
-        genre: row.get(18)?,
-        sample_rate: row.get(19)?,
-        bit_depth: row.get(20)?,
-        channels: row.get(21)?,
-        cover_image_path: row.get(22)?,
-        created_at: row.get(23)?,
-        updated_at: row.get(24)?,
+        subtitle_path: row.get(18)?,
+        genre: row.get(19)?,
+        sample_rate: row.get(20)?,
+        bit_depth: row.get(21)?,
+        channels: row.get(22)?,
+        cover_image_path: row.get(23)?,
+        created_at: row.get(24)?,
+        updated_at: row.get(25)?,
     })
 }
 

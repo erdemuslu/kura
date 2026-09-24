@@ -1,12 +1,15 @@
-import { PLAYERS } from '../api/client';
+import { AUDIO_PLAYERS, VIDEO_PLAYERS } from '../api/client';
 
 interface PlayerSelectProps {
   value: string;
+  kind?: 'audio' | 'video';
   onChange: (value: string) => void;
 }
 
-/** Hedef harici oynatıcı seçici (Rust beyaz listesiyle eşleşir). */
-export default function PlayerSelect({ value, onChange }: PlayerSelectProps) {
+/** Hedef oynatıcı seçici (medya türüne göre uygun oynatıcı listesi). */
+export default function PlayerSelect({ value, kind = 'audio', onChange }: PlayerSelectProps) {
+  const options = kind === 'video' ? VIDEO_PLAYERS : AUDIO_PLAYERS;
+
   return (
     <label className="flex items-center gap-2 text-sm text-slate-300">
       <span className="hidden shrink-0 sm:inline">Oynatıcı</span>
@@ -15,7 +18,7 @@ export default function PlayerSelect({ value, onChange }: PlayerSelectProps) {
         onChange={(e) => onChange(e.target.value)}
         className="rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-100 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400"
       >
-        {PLAYERS.map((p) => (
+        {options.map((p) => (
           <option key={p.id} value={p.id}>
             {p.label}
           </option>
