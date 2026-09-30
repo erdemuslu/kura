@@ -76,6 +76,15 @@ export default function SettingsPanel({
     return saved ? Number(saved) : 100;
   });
 
+  const [showExternalInVideo, setShowExternalInVideo] = useState(() => {
+    return localStorage.getItem('kura-show-external-video-player') === 'true';
+  });
+
+  const handleToggleExternalInVideo = (enabled: boolean) => {
+    setShowExternalInVideo(enabled);
+    localStorage.setItem('kura-show-external-video-player', enabled ? 'true' : 'false');
+  };
+
   const applyScale = (newScale: number) => {
     const clamped = Math.max(75, Math.min(160, newScale));
     setScale(clamped);
@@ -465,6 +474,35 @@ export default function SettingsPanel({
                     ? '✓ Kura gömülü video oynatıcı etkindir: MP4 ve MKV dosyaları transmux ile anında uygulama içinde oynatılır.'
                     : `✓ Harici uygulama modu: Videolar doğrudan ${videoPlayer} uygulamasına teslim edilir.`}
                 </p>
+              </div>
+
+              {/* Video Oynatıcıda Harici Butonu Göster Toggle */}
+              <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-primary">
+                      Gömülü Video Oynatıcıda Harici Oynatıcı Kısayolu (IINA / VLC)
+                    </h3>
+                    <p className="text-xs text-secondary mt-0.5 max-w-md">
+                      Kapalıyken video oynatıcı çubuğunda IINA/VLC butonu gizlenir. Yalnızca video açılamazsa kurtarma alternatifi olarak gösterilir.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={showExternalInVideo}
+                    onClick={() => handleToggleExternalInVideo(!showExternalInVideo)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      showExternalInVideo ? 'bg-accent' : 'bg-surface'
+                    } ring-1 ring-border`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        showExternalInVideo ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
           )}

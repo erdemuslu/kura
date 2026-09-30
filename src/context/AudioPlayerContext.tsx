@@ -79,12 +79,12 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       const cur = audio.currentTime;
       setCurrentTime(cur);
 
-      // Last.fm Scrobble: Şarkının en az %50'si veya 240 saniyesi dinlendiğinde (şarkı >= 30 sn)
+      // Last.fm Scrobble: Şarkının en az %50'si veya 240 saniyesi dinlendiğinde ve EN AZ 15 saniye dinlendiğinde
       const t = currentTrackRef.current;
       if (t && !hasScrobbledRef.current) {
         const dur = t.duration || audio.duration || 0;
-        if (dur >= 30) {
-          const threshold = Math.min(240, dur / 2);
+        if (cur >= 15) {
+          const threshold = Math.max(15, Math.min(240, dur > 0 ? dur / 2 : 15));
           if (cur >= threshold) {
             hasScrobbledRef.current = true;
             sendLastFmScrobble(
@@ -144,11 +144,12 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     const audio = audioRef.current;
     if (!audio) return;
 
-    // Önceki şarkı scrobble koşulunu karşılamışsa ama henüz tetiklenmediyse gönder
+    // Önceki şarkı scrobble koşulunu karşılamışsa ama henüz tetiklenmediyse gönder (min 15 sn)
     const prev = currentTrackRef.current;
-    if (prev && !hasScrobbledRef.current && audio.currentTime > 0) {
+    if (prev && !hasScrobbledRef.current && audio.currentTime >= 15) {
       const prevDur = prev.duration || audio.duration || 0;
-      if (prevDur >= 30 && audio.currentTime >= Math.min(240, prevDur / 2)) {
+      const threshold = Math.max(15, Math.min(240, prevDur > 0 ? prevDur / 2 : 15));
+      if (audio.currentTime >= threshold) {
         hasScrobbledRef.current = true;
         sendLastFmScrobble(
           prev.artist || 'Unknown Artist',
@@ -246,7 +247,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       const t = currentTrackRef.current;
       if (t && !hasScrobbledRef.current) {
         const dur = t.duration || audio.duration || 0;
-        if (dur >= 30) {
+        if (audio.currentTime >= 15 || dur >= 15) {
           hasScrobbledRef.current = true;
           sendLastFmScrobble(
             t.artist || 'Unknown Artist',

@@ -527,9 +527,12 @@ export async function setPlayerSetting(kind: 'audio' | 'video', id: string): Pro
  * üzerinden servis edilir (tek kod yolu; asset-protocol gerekmez).
  * Yükleme hatasında (404) çağıran taraf placeholder'a düşer.
  */
-export function coverUrl(album: string, artist: string): string {
+export function coverUrl(album?: string | null, artist?: string | null): string {
   const base = isRunningInTauri() ? 'http://localhost:8080' : '';
-  return `${base}/api/cover?${new URLSearchParams({ album, artist }).toString()}`;
+  const params = new URLSearchParams();
+  if (album) params.set('album', album);
+  if (artist) params.set('artist', artist);
+  return `${base}/api/cover?${params.toString()}`;
 }
 
 /** Film posteri URL'si: klasör posteri → TMDB zinciri. */

@@ -44,8 +44,9 @@ export default function MediaCard({
   const [imgError, setImgError] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const initial = title.trim().slice(0, 1).toUpperCase() || '♪';
-  const hasCover = coverUrl && !imgError;
+  const safeTitle = typeof title === 'string' ? title : String(title ?? '');
+  const initial = safeTitle.trim().slice(0, 1).toUpperCase() || '♪';
+  const hasCover = Boolean(coverUrl && !imgError);
 
   return (
     <div className="group/card flex flex-col cursor-pointer select-none" onClick={onClick}>
@@ -65,8 +66,8 @@ export default function MediaCard({
         {/* Gerçek Kapak Görseli */}
         {hasCover && (
           <img
-            src={coverUrl}
-            alt={title}
+            src={coverUrl!}
+            alt={safeTitle}
             loading="lazy"
             className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
             onError={() => setImgError(true)}

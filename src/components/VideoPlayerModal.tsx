@@ -17,7 +17,13 @@ import {
   X,
 } from 'lucide-react';
 import { formatDuration } from '../lib/format';
-import { launchPlayer, probeMediaDuration, streamVideoUrl, subtitleUrl } from '../api/client';
+import {
+  isRunningInTauri,
+  launchPlayer,
+  probeMediaDuration,
+  streamVideoUrl,
+  subtitleUrl,
+} from '../api/client';
 
 export interface VideoPlayerItem {
   filePath: string;
@@ -142,6 +148,10 @@ export default function VideoPlayerModal({
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
+  const [showExternalOption] = useState(() => {
+    if (!isRunningInTauri()) return false;
+    return localStorage.getItem('kura-show-external-video-player') === 'true';
+  });
 
   // Altyazı ve Özel Altyazı Ayarları
   const [subtitleEnabled, setSubtitleEnabled] = useState(true);
@@ -767,17 +777,19 @@ export default function VideoPlayerModal({
           </div>
         </div>
 
-        {/* Sağ: Harici Oynatıcı + Kapat */}
+        {/* Sağ: Harici Oynatıcı (yalnızca kullanıcı ayarlardan bilerek açtıysa) + Kapat */}
         <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => launchExternally('IINA')}
-            className="flex items-center gap-1.5 rounded-lg bg-black/50 px-3 py-1.5 text-xs font-medium text-secondary ring-1 ring-white/10 hover:bg-white/15 hover:text-white transition backdrop-blur-md"
-            title="Harici Oynatıcıda Aç"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">IINA / VLC</span>
-          </button>
+          {showExternalOption && isRunningInTauri() && (
+            <button
+              type="button"
+              onClick={() => launchExternally('IINA')}
+              className="flex items-center gap-1.5 rounded-lg bg-black/50 px-3 py-1.5 text-xs font-medium text-secondary ring-1 ring-white/10 hover:bg-white/15 hover:text-white transition backdrop-blur-md"
+              title="Harici Oynatıcıda Aç"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">IINA / VLC</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}

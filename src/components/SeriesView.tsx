@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, SlidersHorizontal } from 'lucide-react';
 import {
   launchPlayer,
@@ -8,6 +8,8 @@ import {
 } from '../api/client';
 import { useEpisodes, useMeta, useSeasons, useShows } from '../hooks/useMedia';
 import { formatDuration, formatSize } from '../lib/format';
+import { matchesCategoryPath } from '../lib/path';
+import { resetScrollTop } from '../lib/scroll';
 import MediaCard from './MediaCard';
 import type { VideoPlayerItem } from './VideoPlayerModal';
 
@@ -44,16 +46,16 @@ export default function SeriesView({
   const [level, setLevel] = useState<Level>({ kind: 'shows' });
   const [feedback, setFeedback] = useState<LaunchResult | null>(null);
 
+  // Dizi, sezon veya bölüm seviyesi geçişlerinde scroll'u sıfırla
+  useEffect(() => {
+    resetScrollTop();
+  }, [level]);
+
   const shows = useShows(query);
   const rawShows = shows.data ?? [];
-  const displayedShows =
-    categoryPaths && categoryPaths.length > 0
-      ? rawShows.filter((s) =>
-          categoryPaths.some(
-            (p) => !s.folder_path || s.folder_path.startsWith(p) || p.startsWith(s.folder_path),
-          ),
-        )
-      : rawShows;
+  const displayedShows = rawShows.filter((s) =>
+    matchesCategoryPath(s.folder_path, categoryPaths),
+  );
   const seasons = useSeasons(level.kind === 'shows' ? null : level.show);
   const atEpisodes = level.kind === 'episodes';
   const episodes = useEpisodes(

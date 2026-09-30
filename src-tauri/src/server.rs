@@ -12,7 +12,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::{Path, PathBuf}};
 use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir;
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use tokio::fs::File;
@@ -194,13 +193,46 @@ async fn check_auth(
     }
 }
 
+#[derive(rust_embed::RustEmbed)]
+#[folder = "../dist"]
+struct WebAssets;
+
+async fn static_handler(uri: axum::http::Uri) -> Response {
+    let mut path = uri.path().trim_start_matches('/').to_string();
+    if path.is_empty() {
+        path = "index.html".to_string();
+    }
+
+    match WebAssets::get(&path) {
+        Some(content) => {
+            let mime = mime_guess::from_path(&path).first_or_octet_stream();
+            (
+                [(header::CONTENT_TYPE, mime.as_ref())],
+                content.data,
+            )
+                .into_response()
+        }
+        None => {
+            // SPA fallback: alt sayfalarda veya bilinmeyen dosyalarda index.html döndür
+            if let Some(index) = WebAssets::get("index.html") {
+                (
+                    [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                    index.data,
+                )
+                    .into_response()
+            } else {
+                (StatusCode::NOT_FOUND, "404 Not Found").into_response()
+            }
+        }
+    }
+}
+
 pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
     let state = ServerState {
         db_path,
         dist,
         hls: std::sync::Arc::new(HlsManager::default()),
     };
-    let static_root = state.dist.clone();
 
     let app = Router::new()
         .route("/api/status", get(status))
@@ -241,7 +273,7 @@ pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
         .route("/api/lastfm/settings", post(lastfm_settings_route))
         .route("/api/lastfm/now-playing", post(lastfm_now_playing_route))
         .route("/api/lastfm/scrobble", post(lastfm_scrobble_route))
-        .fallback_service(ServeDir::new(static_root).append_index_html_on_directories(true))
+        .fallback(static_handler)
         .layer(CorsLayer::permissive())
         .with_state(state);
 

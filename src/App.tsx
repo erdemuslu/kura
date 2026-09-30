@@ -2,10 +2,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import {
   HardDrive,
+  Menu,
   Plus,
   Radio,
   Search,
   Settings,
+  X,
 } from 'lucide-react';
 import AudioPlayerBar from './components/AudioPlayerBar';
 import CreateCategoryModal from './components/CreateCategoryModal';
@@ -28,6 +30,7 @@ import {
   type RemoteInfo,
 } from './api/client';
 import { AudioPlayerProvider, useAudioPlayer } from './context/AudioPlayerContext';
+import { resetScrollTop } from './lib/scroll';
 import { useDisks, useScan } from './hooks/useMedia';
 
 const DEFAULT_CATEGORIES: CategoryInfo[] = [
@@ -92,6 +95,8 @@ function MainLayout() {
   const [scanTargetCat, setScanTargetCat] = useState<CategoryInfo | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [scanToast, setScanToast] = useState<string | null>(null);
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const disksBtnRef = useRef<HTMLButtonElement>(null);
@@ -103,6 +108,11 @@ function MainLayout() {
       localStorage.setItem('kura-categories', JSON.stringify(categories));
     } catch {}
   }, [categories]);
+
+  // Sayfa / menü geçişlerinde scroll pozisyonunu sıfırla
+  useEffect(() => {
+    resetScrollTop();
+  }, [activeCatId]);
 
   const {
     currentTrack,
@@ -286,11 +296,11 @@ function MainLayout() {
 
   return (
     <div className="min-h-screen bg-background text-primary selection:bg-accent/20 selection:text-accent">
-      {/* 1. Üst Bar — 56px Tek Satır, Sabit & Blur */}
-      <header className="sticky top-0 z-30 h-14 border-b border-border bg-surface/85 backdrop-blur-xl transition-colors">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-6 sm:px-8 lg:px-12">
-          {/* Sol: Logo + Sekmeler */}
-          <div className="flex items-center gap-8">
+      {/* 1. Üst Bar — Sabit & Blur (Masaüstü 56px, Mobilde ferah ve kompakt) */}
+      <header className="sticky top-0 z-30 border-b border-border bg-surface/85 backdrop-blur-xl transition-colors">
+        <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between px-4 sm:px-8 lg:px-12">
+          {/* Sol: Logo + (Masaüstü) Sekmeler */}
+          <div className="flex items-center gap-4 md:gap-8">
             {/* Marka: Kura (蔵) + Mühür + Alt Başlık */}
             <div
               className="flex items-center gap-2.5 select-none cursor-default group/brand"
@@ -308,14 +318,14 @@ function MainLayout() {
                   </span>
                   <span className="h-1 w-1 rounded-full bg-accent/80" />
                 </div>
-                <span className="text-[9.5px] font-mono tracking-widest uppercase text-tertiary mt-0.5">
+                <span className="text-[9.5px] font-mono tracking-widest uppercase text-tertiary mt-0.5 hidden sm:inline">
                   Medya Arşivi
                 </span>
               </div>
             </div>
 
-            {/* Sekmeler — Sade metin, altta 2px vurgu çizgisi */}
-            <nav className="flex items-center gap-1 h-14">
+            {/* Masaüstü Sekmeler — Yalnızca md: ve üstünde görünür */}
+            <nav className="hidden md:flex items-center gap-1 h-14">
               {categories.map((c) => {
                 const isActive = activeCategory.id === c.id;
                 return (
@@ -348,8 +358,8 @@ function MainLayout() {
             </nav>
           </div>
 
-          {/* Sağ: Arama, Diskler, Uzaktan Kumanda, Ayarlar */}
-          <div className="flex items-center gap-2.5">
+          {/* Masaüstü Sağ: Arama, Diskler, Uzaktan Kumanda, Ayarlar */}
+          <div className="hidden md:flex items-center gap-2.5">
             {/* Arama Kutusu (⌘K ile odaklanır, sabit genişlik ve zarif 1px odak halkası) */}
             <div className="relative flex items-center">
               <Search className="absolute left-2.5 h-3.5 w-3.5 text-tertiary pointer-events-none" />
@@ -434,7 +444,145 @@ function MainLayout() {
               </button>
             )}
           </div>
+
+          {/* Mobil Sağ: Arama İkonu + Mobil Menü Butonu */}
+          <div className="flex md:hidden items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowMobileSearch(!showMobileSearch)}
+              className={`relative flex h-9 w-9 items-center justify-center rounded-lg transition ${
+                showMobileSearch || query ? 'bg-accent/15 text-accent' : 'text-secondary hover:bg-surface-hover'
+              }`}
+              title="Arama Yap"
+            >
+              <Search className="h-4 w-4" />
+              {query && (
+                <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-accent" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              className={`flex h-9 w-9 items-center justify-center rounded-lg transition ${
+                showMobileMenu ? 'bg-surface-hover text-primary' : 'text-secondary hover:bg-surface-hover'
+              }`}
+              title="Mobil Menü"
+            >
+              {showMobileMenu ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
         </div>
+
+        {/* Mobil Yatay Kategori Çubuğu (Pills) */}
+        <div className="md:hidden flex items-center gap-2 overflow-x-auto px-4 py-2 border-t border-border/40 bg-surface/90 scrollbar-none select-none">
+          {categories.map((c) => {
+            const isActive = activeCategory.id === c.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  setActiveCatId(c.id);
+                  setShowMobileMenu(false);
+                }}
+                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all ${
+                  isActive
+                    ? 'bg-accent text-background font-semibold shadow-sm'
+                    : 'bg-surface-hover/80 text-secondary hover:text-primary ring-1 ring-border/50'
+                }`}
+              >
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Mobil Arama Kutusu (Açıldığında) */}
+        {showMobileSearch && (
+          <div className="md:hidden px-4 py-2.5 bg-surface border-t border-border/50 animate-in slide-in-from-top-1 duration-150">
+            <div className="relative flex items-center">
+              <Search className="absolute left-3 h-3.5 w-3.5 text-tertiary pointer-events-none" />
+              <input
+                autoFocus
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Film, dizi veya müzik ara…"
+                className="h-9 w-full rounded-xl bg-surface-hover pl-9 pr-8 text-xs text-primary ring-1 ring-border/80 placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="absolute right-2.5 p-1 text-tertiary hover:text-primary"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Mobil Hamburger Açılır Menüsü */}
+        {showMobileMenu && (
+          <div className="md:hidden px-4 py-3 bg-surface border-t border-border/60 space-y-2 animate-in slide-in-from-top-1 duration-150 shadow-xl">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMobileMenu(false);
+                setShowCreateCategory(true);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-secondary hover:text-primary hover:bg-surface-hover transition"
+            >
+              <Plus className="h-4 w-4 text-accent" />
+              <span>Yeni Menü / Kategori Ekle</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMobileMenu(false);
+                setShowDisksPopover(!showDisksPopover);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-secondary hover:text-primary hover:bg-surface-hover transition"
+            >
+              <HardDrive className="h-4 w-4 text-accent" />
+              <span className="flex-1 text-left">Diskler & Depolama</span>
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  isOnlineDiskAvailable ? 'bg-status-online' : 'bg-status-offline'
+                }`}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMobileMenu(false);
+                setShowRemotePopover(!showRemotePopover);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-secondary hover:text-primary hover:bg-surface-hover transition"
+            >
+              <Radio className="h-4 w-4 text-accent" />
+              <span className="flex-1 text-left">Uzaktan Kumanda Bilgisi</span>
+              {remote && (
+                <span className="h-2 w-2 rounded-full bg-status-online" />
+              )}
+            </button>
+            {isRunningInTauri() && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMobileMenu(false);
+                  setShowSettings(true);
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-secondary hover:text-primary hover:bg-surface-hover transition"
+              >
+                <Settings className="h-4 w-4 text-accent" />
+                <span>Ayarlar</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Tarama Sürerken İnce İlerleme Çizgisi */}
         {scan.isPending && (

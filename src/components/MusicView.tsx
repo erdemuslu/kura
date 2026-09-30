@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, SlidersHorizontal } from 'lucide-react';
 import {
   coverUrl,
   getAlbumTracks,
+  getArtistTracks,
   launchPlayer,
   launchPlayerBatch,
   type AlbumSummary,
@@ -12,6 +13,8 @@ import {
 import { useAudioPlayer } from '../context/AudioPlayerContext';
 import { useAlbums, useAlbumTracks, useArtists } from '../hooks/useMedia';
 import { formatDuration, formatQuality } from '../lib/format';
+import { matchesCategoryPath } from '../lib/path';
+import { resetScrollTop } from '../lib/scroll';
 import MediaCard from './MediaCard';
 
 type Level =
@@ -48,34 +51,42 @@ export default function MusicView({
 
   const { currentTrack, isPlaying, playTrack, playQueue } = useAudioPlayer();
 
-  const showAlbums = level.kind !== 'top' || level.view === 'albums';
+  // Görünüm veya seviye değişiminde (albüm -> sanatçı -> albüm detayı) sayfayı tepeye kaydır
+  useEffect(() => {
+    resetScrollTop();
+  }, [level]);
+
+  // Sanatçı detayında üst seviye arama query'si filtrelemeyi bozmasın, sanatçının tüm albümleri gelsin.
+  const activeArtist = level.kind === 'artist' ? level.artist : undefined;
+  const albumQuery = level.kind === 'artist' ? '' : query;
+
   const artists = useArtists(query);
-  const albums = useAlbums(query, level.kind === 'artist' ? level.artist : undefined);
+  const albums = useAlbums(albumQuery, activeArtist);
 
   const rawAlbums = albums.data ?? [];
-  const displayedAlbums =
-    categoryPaths && categoryPaths.length > 0
-      ? rawAlbums.filter((a) =>
-          categoryPaths.some(
-            (p) => !a.folder_path || a.folder_path.startsWith(p) || p.startsWith(a.folder_path),
-          ),
-        )
-      : rawAlbums;
+  const displayedAlbums = rawAlbums.filter((a) =>
+    matchesCategoryPath(a.folder_path, categoryPaths),
+  );
 
   const rawArtists = artists.data ?? [];
-  const displayedArtists =
-    categoryPaths && categoryPaths.length > 0
-      ? rawArtists.filter((a) =>
-          categoryPaths.some(
-            (p) => !a.folder_path || a.folder_path.startsWith(p) || p.startsWith(a.folder_path),
-          ),
-        )
-      : rawArtists;
+  const displayedArtists = rawArtists.filter((a) =>
+    matchesCategoryPath(a.folder_path, categoryPaths),
+  );
+
   const tracks = useAlbumTracks(
     level.kind === 'album' ? level.album : '',
     level.kind === 'album' ? level.artist : '',
     level.kind === 'album',
   );
+
+  const artistTrackCount =
+    level.kind === 'artist'
+      ? displayedAlbums.reduce((sum, a) => sum + (a.track_count ?? 0), 0)
+      : 0;
+  const artistDuration =
+    level.kind === 'artist'
+      ? displayedAlbums.reduce((sum, a) => sum + (a.total_duration ?? 0), 0)
+      : 0;
 
   const playSingle = async (item: MediaItem) => {
     onPlayed(item.file_path);
@@ -143,6 +154,14 @@ export default function MusicView({
             </button>
             {level.kind === 'artist' && (
               <>
+                <span>›</span>
+                <button
+                  type="button"
+                  onClick={() => setLevel({ kind: 'top', view: 'artists' })}
+                  className="hover:text-primary transition"
+                >
+                  Sanatçılar
+                </button>
                 <span>›</span>
                 <span className="font-medium text-primary">{level.artist}</span>
               </>
@@ -216,8 +235,34 @@ export default function MusicView({
         </p>
       )}
 
-      {/* Albüm Izgarası */}
-      {showAlbums && level.kind !== 'album' &&
+      {/* Sanatçı Başlık Banner'ı (Sanatçı Detay Görünümünde) */}
+      {level.kind === 'artist' && (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-surface p-6 ring-1 ring-border">
+          <div>
+            <h1 className="font-serif text-3xl font-normal tracking-tight text-primary sm:text-4xl">
+              {level.artist}
+            </h1>
+            <p className="mt-1 text-xs font-mono text-tertiary">
+              {displayedAlbums.length} albüm
+              {artistTrackCount > 0 ? ` · ${artistTrackCount} parça` : ''}
+              {artistDuration > 0 ? ` · ${formatDuration(artistDuration)}` : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              playAll(level.artist, () => getArtistTracks(level.artist))
+            }
+            disabled={batchLabel !== null || displayedAlbums.length === 0}
+            className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-background transition hover:bg-accent-hover disabled:opacity-50"
+          >
+            {batchLabel === level.artist ? 'Ekleniyor…' : '▶ Tümünü Çal'}
+          </button>
+        </div>
+      )}
+
+      {/* Ana Albüm Izgarası (Ana Sayfa) */}
+      {level.kind === 'top' && level.view === 'albums' &&
         (albums.isLoading ? (
           <div className="py-24 text-center text-xs text-tertiary font-serif">
             Kütüphane taranıyor…
@@ -263,9 +308,68 @@ export default function MusicView({
 
               return (
                 <MediaCard
-                  key={label}
-                  title={a.album}
-                  subtitle={a.artist}
+                  key={`${a.artist}::${a.album}`}
+                  title={a.album || 'Bilinmeyen Albüm'}
+                  subtitle={a.artist || 'Bilinmeyen Sanatçı'}
+                  meta={`${a.track_count} şarkı${
+                    a.total_duration ? ` · ${formatDuration(a.total_duration)}` : ''
+                  }`}
+                  coverUrl={coverUrl(a.album, a.artist)}
+                  aspect="1:1"
+                  isPlaying={isCurrentAlbum}
+                  onClick={() => setLevel({ kind: 'album', album: a.album, artist: a.artist })}
+                  onPlayHover={() =>
+                    playAll(label, () => getAlbumTracks(a.album, a.artist))
+                  }
+                  playHoverLoading={batchLabel === label}
+                />
+              );
+            })}
+          </div>
+        ))}
+
+      {/* Sanatçıya Ait Albümler Izgarası (Sanatçı Tıklandığında) */}
+      {level.kind === 'artist' &&
+        (albums.isLoading ? (
+          <div className="py-24 text-center text-xs text-tertiary font-serif">
+            Albümler yükleniyor…
+          </div>
+        ) : albums.isError ? (
+          <div className="py-24 text-center space-y-3">
+            <p className="font-serif text-xl text-status-offline">Albümler yüklenirken bir sorun oluştu</p>
+            <button
+              type="button"
+              onClick={() => albums.refetch()}
+              className="rounded-lg bg-surface-hover px-4 py-2 text-xs font-medium text-secondary hover:text-primary ring-1 ring-border transition"
+            >
+              Yeniden Dene
+            </button>
+          </div>
+        ) : displayedAlbums.length === 0 ? (
+          <div className="py-24 text-center space-y-3">
+            <p className="font-serif text-2xl text-secondary font-normal">Bu sanatçıya ait albüm bulunamadı</p>
+            <button
+              type="button"
+              onClick={() => setLevel({ kind: 'top', view: 'artists' })}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-background hover:bg-accent-hover transition"
+            >
+              Sanatçılara Dön
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+            {displayedAlbums.map((a: AlbumSummary) => {
+              const label = `${a.artist} — ${a.album}`;
+              const isCurrentAlbum =
+                player === 'in_app' &&
+                currentTrack?.album === a.album &&
+                currentTrack?.artist === a.artist;
+
+              return (
+                <MediaCard
+                  key={`${a.artist}::${a.album}`}
+                  title={a.album || 'Bilinmeyen Albüm'}
+                  subtitle={a.artist || 'Bilinmeyen Sanatçı'}
                   meta={`${a.track_count} şarkı${
                     a.total_duration ? ` · ${formatDuration(a.total_duration)}` : ''
                   }`}
@@ -296,7 +400,7 @@ export default function MusicView({
             {displayedArtists.map((a: ArtistSummary) => (
               <MediaCard
                 key={a.artist}
-                title={a.artist}
+                title={a.artist || 'Bilinmeyen Sanatçı'}
                 subtitle={`${a.album_count} albüm`}
                 meta={`${a.track_count} parça`}
                 aspect="1:1"
@@ -320,7 +424,7 @@ export default function MusicView({
                 }}
               />
               <div className="absolute inset-0 -z-10 flex items-center justify-center font-serif text-4xl text-tertiary">
-                {level.album.slice(0, 1)}
+                {(level.album || '♪').slice(0, 1)}
               </div>
             </div>
 

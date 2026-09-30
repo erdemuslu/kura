@@ -573,12 +573,8 @@ export default function NowPlayingModal({
         </svg>
       </div>
 
-      {/* 2. ÜST BAR (CHROME): SAKİN MODDA SOLAN YALNIZCA GEREKLİ ARAÇLAR */}
-      <header
-        className={`relative z-20 flex h-16 w-full items-center justify-between px-8 sm:px-12 transition-opacity duration-600 ${
-          idleLevel !== 'active' ? 'opacity-0 pointer-events-none' : 'opacity-100'
-        }`}
-      >
+      {/* 2. ÜST BAR (CHROME): SÜREKLİ GÖRÜNÜR ÜST KONTROLLER */}
+      <header className="relative z-20 flex h-16 w-full items-center justify-between px-4 sm:px-8 lg:px-12 transition-opacity duration-300 opacity-100">
         {/* Sol: ⌄ Küçült */}
         <button
           type="button"
@@ -590,7 +586,7 @@ export default function NowPlayingModal({
         </button>
 
         {/* Sağ: Sekmeler / Tam Ekran */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => setActiveTab('queue')}
@@ -640,8 +636,8 @@ export default function NowPlayingModal({
       </header>
 
       {/* 3. ANA GÖVDE: BÜYÜK DİNLEME ODASI IZGARASI */}
-      <main className="relative z-10 flex flex-1 items-center justify-center px-6 sm:px-12 py-2">
-        <div className="w-full max-w-[1400px] grid grid-cols-1 lg:grid-cols-[auto_minmax(360px,560px)] items-center justify-center gap-8 lg:gap-[clamp(48px,6vw,120px)] my-auto">
+      <main className="relative z-10 flex flex-1 items-center justify-center px-4 sm:px-8 lg:px-12 py-2 overflow-y-auto lg:overflow-visible">
+        <div className="w-full max-w-[1400px] grid grid-cols-1 lg:grid-cols-[auto_minmax(360px,560px)] items-center justify-center gap-6 lg:gap-[clamp(48px,6vw,120px)] my-auto">
           {/* SOL SÜTUN: PLAK HİSSİ VEREN BÜYÜK KAPAK (4px radius, çerçevesiz, katmanlı gölge) */}
           <div className="flex justify-center items-center">
             <div
@@ -652,7 +648,7 @@ export default function NowPlayingModal({
                   ? `0 2px 4px rgba(0, 0, 0, 0.3), 0 24px 48px -12px rgba(0, 0, 0, 0.5), 0 60px 120px -40px ${accent.glow}`
                   : '0 2px 4px rgba(0, 0, 0, 0.4), 0 16px 32px -8px rgba(0, 0, 0, 0.6)',
               }}
-              className={`relative cursor-pointer aspect-square rounded-[4px] overflow-hidden bg-[#1a1817] transition-all duration-300 w-[min(72vw,44vh)] h-[min(72vw,44vh)] lg:w-[min(64vh,42vw)] lg:h-[min(64vh,42vw)] max-w-[680px] max-h-[680px] ${
+              className={`relative cursor-pointer aspect-square rounded-[4px] overflow-hidden bg-[#1a1817] transition-all duration-300 w-[min(76vw,36vh)] h-[min(76vw,36vh)] sm:w-[min(65vw,40vh)] sm:h-[min(65vw,40vh)] lg:w-[min(64vh,42vw)] lg:h-[min(64vh,42vw)] max-w-[680px] max-h-[680px] ${
                 isPlaying ? 'scale-100' : 'scale-[0.97]'
               }`}
             >
@@ -671,29 +667,29 @@ export default function NowPlayingModal({
           </div>
 
           {/* SAĞ SÜTUN: BİLGİ BLOĞU, İLERLEME, KONTROLLER & SEKME İÇERİĞİ */}
-          <div className="flex flex-col justify-between w-full max-w-[560px] mx-auto lg:h-[min(64vh,42vw)] lg:max-h-[680px] min-h-[460px]">
+          <div className="flex flex-col justify-between w-full max-w-full lg:max-w-[560px] mx-auto lg:h-[min(64vh,42vw)] lg:max-h-[680px] min-h-0 lg:min-h-[460px]">
             {/* ÜST BİLGİ: ÜST ETİKET · ŞARKI ADI (SERIF) · SANATÇI */}
             <div
-              className={`transition-opacity duration-200 ${
+              className={`w-full transition-opacity duration-200 ${
                 isHoveringProgress ? 'opacity-65' : 'opacity-100'
               }`}
             >
               {/* Üst Etiket */}
-              <div className="flex items-center gap-1.5 text-[11px] font-mono tracking-[0.14em] uppercase text-white/40">
+              <div className="flex items-center gap-1.5 text-[11px] font-mono tracking-[0.14em] uppercase text-white/40 w-full">
                 <span>Şimdi Çalıyor</span>
                 <span>·</span>
                 <button
                   type="button"
                   onClick={() => setActiveTab('album')}
-                  className="truncate hover:text-white transition-colors"
+                  className="truncate hover:text-white transition-colors max-w-[220px] sm:max-w-none"
                 >
                   {track.album || 'Tekli / Bilinmeyen'}
                 </button>
               </div>
 
-              {/* Şarkı Adı (Büyük Serif, max 2 satır) */}
+              {/* Şarkı Adı (Büyük Serif, max 2 satır, Full Width) */}
               <h1
-                className={`font-serif text-[clamp(32px,3.8vw,58px)] leading-[1.05] text-white font-normal text-balance line-clamp-2 mt-2 transition-all duration-250 ${
+                className={`w-full font-serif text-[clamp(26px,4.5vw,56px)] leading-[1.08] text-white font-normal break-words line-clamp-2 mt-2 transition-all duration-250 ${
                   isTitleAnimating
                     ? '-translate-y-2 opacity-0'
                     : 'translate-y-0 opacity-100'
@@ -702,12 +698,12 @@ export default function NowPlayingModal({
                 {track.title}
               </h1>
 
-              {/* Sanatçı & Ek Bilgi */}
-              <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 mt-3">
+              {/* Sanatçı & Ek Bilgi (Full Width) */}
+              <div className="w-full flex flex-wrap items-baseline gap-x-2.5 gap-y-1 mt-2.5">
                 <button
                   type="button"
                   onClick={() => setActiveTab('album')}
-                  className="text-[clamp(16px,1.6vw,20px)] text-white/70 font-sans hover:text-white transition-colors"
+                  className="text-[clamp(15px,2vw,20px)] text-white/70 font-sans hover:text-white transition-colors truncate max-w-full"
                 >
                   {track.artist || 'Bilinmeyen Sanatçı'}
                 </button>
@@ -721,12 +717,8 @@ export default function NowPlayingModal({
               </div>
             </div>
 
-            {/* ORTA KISIM: İLERLEME ÇUBUĞU (SÜRELER İKİ YANDA) & KONTROLLER (DERİN SAKİNLİKTE KAYBOLUR) */}
-            <div
-              className={`transition-opacity duration-600 my-4 ${
-                idleLevel === 'deep' ? 'opacity-0 pointer-events-none' : 'opacity-100'
-              }`}
-            >
+            {/* ORTA KISIM: İLERLEME ÇUBUĞU (SÜRELER İKİ YANDA) & KONTROLLER */}
+            <div className="w-full my-3 sm:my-4 transition-opacity duration-300 opacity-100">
               {/* İlerleme Çubuğu Satırı */}
               <div className="flex items-center gap-3 w-full">
                 {/* Geçen Süre */}
@@ -871,12 +863,8 @@ export default function NowPlayingModal({
               </div>
             </div>
 
-            {/* ALT KISIM: SEKME PANELİ (SIRADAKİ · ALBÜM · SÖZLER · BİLGİ) */}
-            <div
-              className={`transition-opacity duration-600 ${
-                idleLevel !== 'active' ? 'opacity-0 pointer-events-none' : 'opacity-100'
-              }`}
-            >
+            {/* ALT KISIM: SEKME PANELİ (SIRADAKİ · ALBÜM · SÖZLER · BİLGİ) - SÜREKLİ GÖRÜNÜR */}
+            <div className="w-full transition-opacity duration-300 opacity-100">
               {/* Sekme Başlıkları (Yalnızca Metin, 13px, 1px Alt Çizgi) */}
               <div className="flex items-center gap-6 border-b border-white/[0.08] pb-2 text-[13px] font-medium">
                 <button
@@ -1190,11 +1178,7 @@ export default function NowPlayingModal({
       </main>
 
       {/* 4. ALT KENAR (CHROME): SOLDA FORMAT ETİKETİ, SAĞDA 120PX SES KAYDIRICI */}
-      <footer
-        className={`relative z-20 flex h-16 w-full items-center justify-between px-8 sm:px-12 transition-opacity duration-600 ${
-          idleLevel !== 'active' ? 'opacity-0 pointer-events-none' : 'opacity-100'
-        }`}
-      >
+      <footer className="relative z-20 flex h-16 w-full items-center justify-between px-4 sm:px-8 lg:px-12 transition-opacity duration-300 opacity-100">
         {/* Sol: Format Etiketi (Hi-Res kaynaklarda başta 4px nokta) */}
         <div className="flex items-center gap-2 font-mono text-[11px] text-white/50">
           {quality.isHiRes && (

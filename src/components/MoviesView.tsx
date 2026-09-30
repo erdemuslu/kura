@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, SlidersHorizontal } from 'lucide-react';
 import {
   getMovieFiles,
@@ -11,6 +11,8 @@ import {
 } from '../api/client';
 import { useMeta, useMovieFiles, useMovies } from '../hooks/useMedia';
 import { formatSize } from '../lib/format';
+import { matchesCategoryPath } from '../lib/path';
+import { resetScrollTop } from '../lib/scroll';
 import MediaCard from './MediaCard';
 import type { VideoPlayerItem } from './VideoPlayerModal';
 
@@ -44,15 +46,15 @@ export default function MoviesView({
   const [playing, setPlaying] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<LaunchResult | null>(null);
 
+  // Film detayına girerken veya çıkarken scroll'u sıfırla
+  useEffect(() => {
+    resetScrollTop();
+  }, [detail]);
+
   const rawMovies = movies.data ?? [];
-  const displayedMovies =
-    categoryPaths && categoryPaths.length > 0
-      ? rawMovies.filter((m) =>
-          categoryPaths.some(
-            (p) => m.folder_path.startsWith(p) || p.startsWith(m.folder_path),
-          ),
-        )
-      : rawMovies;
+  const displayedMovies = rawMovies.filter((m) =>
+    matchesCategoryPath(m.folder_path, categoryPaths),
+  );
   const totalSize = displayedMovies.reduce((acc, m) => acc + m.total_size, 0);
 
   const detailFiles = useMovieFiles(detail ? detail.folder_path : null);

@@ -244,15 +244,15 @@ export default function AudioPlayerBar() {
           )}
         </div>
 
-        {/* 3 Bölge: Sol, Orta, Sağ */}
-        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-4 sm:px-6">
-          {/* 1. Sol Bölge: 48px Kapak + Başlık/Sanatçı */}
-          <div className="flex min-w-0 items-center gap-3 w-1/4 sm:w-1/3">
-            <div
-              className="relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-[6px] bg-surface-hover ring-1 ring-border shadow transition hover:opacity-90 active:scale-95"
-              onClick={() => setIsNowPlayingOpen(true)}
-              title="Şimdi Çalıyor görünümünü aç"
-            >
+        {/* 3 Bölge: Sol (Kapak/Şarkı), Orta (Masaüstü Kontroller), Sağ (Mobil Kontroller + Masaüstü Araçlar) */}
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-3 sm:px-6">
+          {/* 1. Sol Bölge: Kapak + Başlık/Sanatçı (Mobilde flex-1 ile genişler) */}
+          <div
+            className="flex min-w-0 flex-1 md:flex-initial md:w-1/3 items-center gap-2.5 sm:gap-3 cursor-pointer select-none pr-2"
+            onClick={() => setIsNowPlayingOpen(true)}
+            title="Şimdi Çalıyor görünümünü aç"
+          >
+            <div className="relative h-11 w-11 sm:h-12 sm:w-12 shrink-0 overflow-hidden rounded-[6px] bg-surface-hover ring-1 ring-border shadow transition hover:opacity-90 active:scale-95">
               <img
                 src={cover}
                 alt={currentTrack.album || ''}
@@ -266,28 +266,20 @@ export default function AudioPlayerBar() {
               </div>
             </div>
             <div className="min-w-0 flex-1">
-              <p
-                className="truncate text-[13px] font-medium text-primary hover:text-accent cursor-pointer transition-colors"
-                onClick={() => setIsNowPlayingOpen(true)}
-                title={currentTrack.title}
-              >
+              <p className="truncate text-[13px] font-medium text-primary hover:text-accent transition-colors">
                 {currentTrack.title}
               </p>
-              <p
-                className="truncate text-[11px] text-secondary hover:text-primary cursor-pointer transition-colors"
-                onClick={() => setIsNowPlayingOpen(true)}
-                title={`${currentTrack.artist || 'Bilinmeyen'} • ${currentTrack.album || ''}`}
-              >
+              <p className="truncate text-[11px] text-secondary hover:text-primary transition-colors">
                 {currentTrack.artist || 'Bilinmeyen Sanatçı'}
                 {currentTrack.album ? (
-                  <span className="text-tertiary"> — {currentTrack.album}</span>
+                  <span className="hidden sm:inline text-tertiary"> — {currentTrack.album}</span>
                 ) : null}
               </p>
             </div>
           </div>
 
-          {/* 2. Orta Bölge: Oynatıcı Kontrolleri */}
-          <div className="flex items-center justify-center gap-4 sm:gap-6">
+          {/* 2. Orta Bölge: Masaüstü Oynatıcı Kontrolleri (Mobilde gizlenir) */}
+          <div className="hidden md:flex items-center justify-center gap-4 lg:gap-6">
             <button
               type="button"
               onClick={toggleShuffle}
@@ -354,15 +346,47 @@ export default function AudioPlayerBar() {
             </button>
           </div>
 
-          {/* 3. Sağ Bölge: Süre, Format, Ses, Kuyruk */}
-          <div className="flex items-center justify-end gap-3 sm:gap-4 w-1/4 sm:w-1/3">
-            {/* Süre */}
+          {/* 3. Sağ Bölge: Mobilde Kompakt Oynatıcı Kontrolleri + Masaüstünde Süre, Format, Ses, Kuyruk */}
+          <div className="flex items-center justify-end gap-1.5 sm:gap-3 md:gap-4 md:w-1/3 shrink-0">
+            {/* Mobilde Hızlı Kontroller (md:hidden) */}
+            <div className="flex md:hidden items-center gap-1">
+              <button
+                type="button"
+                onClick={prevTrack}
+                title="Önceki"
+                className="p-2 text-secondary hover:text-primary active:scale-95 transition"
+              >
+                <SkipBack className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={togglePlay}
+                title={isPlaying ? 'Duraklat' : 'Oynat'}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-background shadow active:scale-95 transition"
+              >
+                {isPlaying ? (
+                  <Pause className="h-4 w-4 fill-current" />
+                ) : (
+                  <Play className="h-4 w-4 fill-current ml-0.5" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={nextTrack}
+                title="Sonraki"
+                className="p-2 text-secondary hover:text-primary active:scale-95 transition"
+              >
+                <SkipForward className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Süre (Masaüstü) */}
             <span className="hidden md:inline font-mono text-xs text-tertiary tabular-nums">
               {formatDuration(Math.floor(currentTime)) || '0:00'} /{' '}
               {formatDuration(Math.floor(currentDuration)) || '0:00'}
             </span>
 
-            {/* Format Etiketi + Hi-Res Vurgu Noktası */}
+            {/* Format Etiketi + Hi-Res Vurgu Noktası (Geniş Ekran) */}
             <div className="group/fmt relative hidden lg:flex items-center gap-1.5 shrink-0">
               <span className="flex items-center gap-1 rounded bg-surface-hover px-2 py-0.5 font-mono text-[10px] text-secondary ring-1 ring-border cursor-help">
                 {quality.isHiRes && (
@@ -380,7 +404,7 @@ export default function AudioPlayerBar() {
               </div>
             </div>
 
-            {/* Ses Kontrolü */}
+            {/* Ses Kontrolü (sm ve üzeri) */}
             <div className="hidden sm:flex items-center gap-1.5">
               <button
                 type="button"
@@ -405,7 +429,7 @@ export default function AudioPlayerBar() {
               />
             </div>
 
-            {/* Kuyruk Butonu */}
+            {/* Kuyruk Butonu (Her Zaman Erişilebilir) */}
             <button
               ref={queueToggleBtnRef}
               type="button"

@@ -29,6 +29,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 tokio-util = { version = "0.7", features = ["io"] }
 # Last.fm API isteklerini imzalamak (MD5 api_sig) için
 md-5 = "0.10"
+rust-embed = { version = "8.12.0", features = ["mime-guess"] }
+mime_guess = "2.0.5"
 
 [profile.release]
 strip = true
