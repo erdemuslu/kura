@@ -726,3 +726,147 @@ export async function revealInFinder(filePath: string): Promise<void> {
   });
 }
 
+export interface LastFmStatus {
+  connected: boolean;
+  username: string | null;
+  scrobble_enabled: boolean;
+  has_api_keys: boolean;
+}
+
+export interface LastFmAuthResponse {
+  token: string;
+  url: string;
+}
+
+/** Last.fm bağlantı durumunu çeker. */
+export async function getLastFmStatus(): Promise<LastFmStatus> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<LastFmStatus>('lastfm_get_status');
+  }
+  try {
+    const res = await restFetch('/api/lastfm/status');
+    return res.json();
+  } catch {
+    return { connected: false, username: null, scrobble_enabled: false, has_api_keys: false };
+  }
+}
+
+/** Last.fm yetkilendirmesi başlatır (tarayıcıda onay sayfası açılır, token döner). */
+export async function startLastFmAuth(): Promise<LastFmAuthResponse> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<LastFmAuthResponse>('lastfm_start_auth');
+  }
+  const res = await restFetch('/api/lastfm/auth-url', { method: 'POST' });
+  return res.json();
+}
+
+/** Tarayıcıda onaylanan token'ı kalıcı oturuma dönüştürür. */
+export async function completeLastFmAuth(token: string): Promise<string> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<string>('lastfm_complete_auth', { token });
+  }
+  const res = await restFetch('/api/lastfm/complete-auth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  const data = await res.json();
+  return data.username;
+}
+
+/** Last.fm bağlantısını keser. */
+export async function disconnectLastFm(): Promise<void> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('lastfm_disconnect');
+    return;
+  }
+  await restFetch('/api/lastfm/disconnect', { method: 'POST' });
+}
+
+/** Scrobble açık/kapalı ayarını değiştirir. */
+export async function setLastFmScrobbleEnabled(enabled: boolean): Promise<void> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('lastfm_set_scrobble_enabled', { enabled });
+    return;
+  }
+  await restFetch('/api/lastfm/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+/** Last.fm'e "Şu an çalıyor" bildirir. */
+export async function sendLastFmNowPlaying(
+  artist: string,
+  track: string,
+  album?: string | null,
+  duration?: number | null,
+): Promise<void> {
+  try {
+    if (isRunningInTauri()) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('lastfm_now_playing', {
+        artist,
+        track,
+        album: album || undefined,
+        duration: duration ? Math.round(duration) : undefined,
+      });
+      return;
+    }
+    await restFetch('/api/lastfm/now-playing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        artist,
+        track,
+        album: album || undefined,
+        duration: duration ? Math.round(duration) : undefined,
+      }),
+    });
+  } catch (err) {
+    console.debug('Last.fm now playing bildirim hatası:', err);
+  }
+}
+
+/** Last.fm'e şarkıyı scrobble eder. */
+export async function sendLastFmScrobble(
+  artist: string,
+  track: string,
+  timestamp: number,
+  album?: string | null,
+  duration?: number | null,
+): Promise<void> {
+  try {
+    if (isRunningInTauri()) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('lastfm_scrobble', {
+        artist,
+        track,
+        timestamp: Math.round(timestamp),
+        album: album || undefined,
+        duration: duration ? Math.round(duration) : undefined,
+      });
+      return;
+    }
+    await restFetch('/api/lastfm/scrobble', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        artist,
+        track,
+        timestamp: Math.round(timestamp),
+        album: album || undefined,
+        duration: duration ? Math.round(duration) : undefined,
+      }),
+    });
+  } catch (err) {
+    console.debug('Last.fm scrobble hatası:', err);
+  }
+}
+

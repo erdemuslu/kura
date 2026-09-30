@@ -7,6 +7,7 @@
 mod cover;
 mod db;
 mod ffmpeg;
+mod lastfm;
 mod meta;
 mod runner;
 mod scanner;
@@ -496,6 +497,175 @@ fn is_ffmpeg_available() -> bool {
     ffmpeg::is_available()
 }
 
+/// Last.fm durumunu sorgular.
+#[tauri::command]
+async fn lastfm_get_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<lastfm::LastFmStatus, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        Ok(lastfm::get_status(&conn))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Last.fm yetkilendirmesini başlatır (tarayıcıda onay linki açar, token döner).
+#[tauri::command]
+async fn lastfm_start_auth(
+    state: tauri::State<'_, AppState>,
+) -> Result<lastfm::AuthUrlResponse, String> {
+    let db_path = state.db_path.clone();
+    let keys = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        Ok::<_, String>(lastfm::resolve_api_keys(Some(&conn)))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    let (api_key, _) = keys.ok_or_else(|| {
+        "Last.fm API Key bulunamadı (.env veya ayarları kontrol edin)".to_string()
+    })?;
+    lastfm::start_auth(&api_key).await
+}
+
+/// Tarayıcıda izin verildikten sonra token'ı kontrol edip oturumu kaydeder.
+#[tauri::command]
+async fn lastfm_complete_auth(
+    token: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let db_path = state.db_path.clone();
+    let keys = tokio::task::spawn_blocking({
+        let db_path = db_path.clone();
+        move || {
+            let conn = db::open(&db_path)?;
+            Ok::<_, String>(lastfm::resolve_api_keys(Some(&conn)))
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    let (api_key, secret) = keys.ok_or_else(|| "Last.fm API Key bulunamadı".to_string())?;
+    let (username, session_key) = lastfm::create_session(&api_key, &secret, &token).await?;
+
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::set_setting(&conn, "lastfm_username", &username)?;
+        db::set_setting(&conn, "lastfm_session_key", &session_key)?;
+        db::set_setting(&conn, "lastfm_scrobble_enabled", "true")?;
+        Ok::<_, String>(username)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Last.fm oturumunu kapatır.
+#[tauri::command]
+async fn lastfm_disconnect(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        lastfm::disconnect(&conn)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Scrobble özelliğini açar/kapatır.
+#[tauri::command]
+async fn lastfm_set_scrobble_enabled(
+    enabled: bool,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        lastfm::set_scrobble_enabled(&conn, enabled)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Şu an çalan şarkıyı Last.fm'e bildirir.
+#[tauri::command]
+async fn lastfm_now_playing(
+    artist: String,
+    track: String,
+    album: Option<String>,
+    duration: Option<u64>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db_path = state.db_path.clone();
+    let creds = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        let status = lastfm::get_status(&conn);
+        if !status.connected || !status.scrobble_enabled {
+            return Ok::<_, String>(None);
+        }
+        let keys = lastfm::resolve_api_keys(Some(&conn));
+        let sk = db::get_setting_opt(&conn, "lastfm_session_key")?;
+        Ok(keys.zip(sk))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    if let Some(((api_key, secret), sk)) = creds {
+        let _ = lastfm::update_now_playing(
+            &api_key,
+            &secret,
+            &sk,
+            &artist,
+            &track,
+            album.as_deref(),
+            duration,
+        )
+        .await;
+    }
+    Ok(())
+}
+
+/// Şarkıyı Last.fm profiline scrobble eder.
+#[tauri::command]
+async fn lastfm_scrobble(
+    artist: String,
+    track: String,
+    timestamp: u64,
+    album: Option<String>,
+    duration: Option<u64>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db_path = state.db_path.clone();
+    let creds = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        let status = lastfm::get_status(&conn);
+        if !status.connected || !status.scrobble_enabled {
+            return Ok::<_, String>(None);
+        }
+        let keys = lastfm::resolve_api_keys(Some(&conn));
+        let sk = db::get_setting_opt(&conn, "lastfm_session_key")?;
+        Ok(keys.zip(sk))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    if let Some(((api_key, secret), sk)) = creds {
+        let _ = lastfm::scrobble(
+            &api_key,
+            &secret,
+            &sk,
+            &artist,
+            &track,
+            timestamp,
+            album.as_deref(),
+            duration,
+        )
+        .await;
+    }
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Native klasör seçme diyaloğu (ScanPanel "Gözat…" butonu)
@@ -550,7 +720,14 @@ pub fn run() {
             is_ffmpeg_available,
             remove_source_path,
             get_lyrics,
-            reveal_in_finder
+            reveal_in_finder,
+            lastfm_get_status,
+            lastfm_start_auth,
+            lastfm_complete_auth,
+            lastfm_disconnect,
+            lastfm_set_scrobble_enabled,
+            lastfm_now_playing,
+            lastfm_scrobble
         ])
         .run(tauri::generate_context!())
         .expect("Tauri uygulaması çalıştırılamadı");

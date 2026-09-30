@@ -3,7 +3,9 @@ import {
   Check,
   ChevronDown,
   Copy,
+  ExternalLink,
   Film,
+  Loader2,
   Monitor,
   Music,
   PlaySquare,
@@ -15,16 +17,22 @@ import {
 } from 'lucide-react';
 import {
   AUDIO_PLAYERS,
+  completeLastFmAuth,
+  disconnectLastFm,
+  getLastFmStatus,
   getTmdbApiKey,
   regenerateRemoteToken,
+  setLastFmScrobbleEnabled,
   setPlayerSetting,
   setRemoteAuthEnabled,
   setTmdbApiKey,
+  startLastFmAuth,
   VIDEO_PLAYERS,
+  type LastFmStatus,
   type RemoteInfo,
 } from '../api/client';
 
-type SettingsTab = 'appearance' | 'players' | 'remote' | 'tmdb';
+type SettingsTab = 'appearance' | 'players' | 'remote' | 'tmdb' | 'lastfm';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -57,6 +65,12 @@ export default function SettingsPanel({
   const [tmdbSaved, setTmdbSaved] = useState<string | null>(null);
   const [tmdbFeedback, setTmdbFeedback] = useState<string | null>(null);
 
+  const [lastFmStatus, setLastFmStatus] = useState<LastFmStatus | null>(null);
+  const [lastFmLoading, setLastFmLoading] = useState(false);
+  const [lastFmPendingToken, setLastFmPendingToken] = useState<string | null>(null);
+  const [lastFmAuthUrl, setLastFmAuthUrl] = useState<string | null>(null);
+  const [lastFmFeedback, setLastFmFeedback] = useState<string | null>(null);
+
   const [scale, setScale] = useState<number>(() => {
     const saved = localStorage.getItem('lmh-ui-scale');
     return saved ? Number(saved) : 100;
@@ -74,7 +88,73 @@ export default function SettingsPanel({
     getTmdbApiKey()
       .then((k) => setTmdbSaved(k))
       .catch(() => setTmdbSaved(null));
+    getLastFmStatus()
+      .then((s) => setLastFmStatus(s))
+      .catch(() => setLastFmStatus(null));
   }, [isOpen]);
+
+  const handleStartLastFm = async () => {
+    setLastFmLoading(true);
+    setLastFmFeedback(null);
+    try {
+      const res = await startLastFmAuth();
+      setLastFmPendingToken(res.token);
+      setLastFmAuthUrl(res.url);
+      setLastFmFeedback(
+        'Tarayıcınızda onay sayfası açıldı. Hesabınızla onay verdikten sonra "Yetkilendirmeyi Tamamla" butonuna tıklayın.',
+      );
+    } catch (e: any) {
+      setLastFmFeedback(e?.message || 'Yetkilendirme başlatılamadı');
+    } finally {
+      setLastFmLoading(false);
+    }
+  };
+
+  const handleCompleteLastFm = async () => {
+    if (!lastFmPendingToken) return;
+    setLastFmLoading(true);
+    setLastFmFeedback(null);
+    try {
+      const username = await completeLastFmAuth(lastFmPendingToken);
+      setLastFmPendingToken(null);
+      setLastFmAuthUrl(null);
+      setLastFmFeedback(`Harika! @${username} hesabı başarıyla bağlandı.`);
+      const updated = await getLastFmStatus();
+      setLastFmStatus(updated);
+    } catch (e: any) {
+      setLastFmFeedback(
+        e?.message ||
+          'Yetkilendirme henüz tamamlanmadı. Lütfen tarayıcıda izin verdiğinizden emin olun.',
+      );
+    } finally {
+      setLastFmLoading(false);
+    }
+  };
+
+  const handleDisconnectLastFm = async () => {
+    setLastFmLoading(true);
+    try {
+      await disconnectLastFm();
+      setLastFmPendingToken(null);
+      setLastFmAuthUrl(null);
+      setLastFmFeedback('Last.fm bağlantısı kesildi.');
+      const updated = await getLastFmStatus();
+      setLastFmStatus(updated);
+    } catch (e: any) {
+      setLastFmFeedback(e?.message || 'Bağlantı kesilemedi');
+    } finally {
+      setLastFmLoading(false);
+    }
+  };
+
+  const handleToggleScrobble = async () => {
+    if (!lastFmStatus) return;
+    const nextVal = !lastFmStatus.scrobble_enabled;
+    try {
+      await setLastFmScrobbleEnabled(nextVal);
+      setLastFmStatus((prev) => (prev ? { ...prev, scrobble_enabled: nextVal } : null));
+    } catch {}
+  };
 
   if (!isOpen) return null;
 
@@ -146,6 +226,7 @@ export default function SettingsPanel({
     { id: 'players' as const, label: 'Oynatıcılar', icon: PlaySquare },
     { id: 'remote' as const, label: 'Uzaktan Kumanda', icon: Radio },
     { id: 'tmdb' as const, label: 'Afişler & TMDB', icon: Film },
+    { id: 'lastfm' as const, label: 'Last.fm Scrobbler', icon: Music },
   ];
 
   return (
@@ -517,6 +598,159 @@ export default function SettingsPanel({
                     themoviedb.org
                   </a>{' '}
                   üzerinden ücretsiz hesap açıp Ayarlar → API sekmesinden anında bir v3 anahtarı oluşturabilirsiniz. Anahtar girilmediğinde yerel klasör posterleri ve iTunes zinciri fallback olarak çalışır.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* 5. SEKME: LAST.FM SCROBBLER */}
+          {activeTab === 'lastfm' && (
+            <div className="space-y-6 animate-in fade-in duration-150">
+              <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-primary">
+                        Last.fm Scrobbler & Now Playing
+                      </h3>
+                      {lastFmStatus?.connected ? (
+                        <span className="flex items-center gap-1.5 rounded-full bg-status-online/15 px-2.5 py-0.5 text-[11px] font-medium text-status-online ring-1 ring-status-online/30">
+                          <span className="h-1.5 w-1.5 rounded-full bg-status-online" />
+                          @{lastFmStatus.username}
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-surface px-2.5 py-0.5 text-[11px] font-medium text-tertiary ring-1 ring-border">
+                          Bağlı Değil
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-secondary leading-relaxed">
+                      Kura'da dinlediğiniz şarkıları anında Last.fm profilinize yansıtın ve dinleme istatistiklerinizi tutun.
+                    </p>
+                  </div>
+                </div>
+
+                {!lastFmStatus?.has_api_keys ? (
+                  <div className="rounded-lg bg-surface p-4 ring-1 ring-border text-xs text-status-offline space-y-1.5">
+                    <p className="font-semibold">Last.fm API Anahtarları Bulunamadı</p>
+                    <p className="text-secondary leading-relaxed">
+                      Proje kök dizinindeki <code className="font-mono text-accent">.env</code> dosyasında <code className="font-mono">LASTFM_API_KEY</code> ve <code className="font-mono">LASTFM_SHARED_SECRET</code> anahtarlarının tanımlı olduğundan emin olun.
+                    </p>
+                  </div>
+                ) : lastFmStatus.connected ? (
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center justify-between rounded-lg bg-surface p-4 ring-1 ring-border">
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-medium text-primary">
+                          Dinlemeleri Scrobble Et
+                        </div>
+                        <div className="text-[11px] text-tertiary">
+                          Şarkının en az %50'si veya 4 dakikası dinlendiğinde profilinize eklenir
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={lastFmStatus.scrobble_enabled}
+                          onChange={handleToggleScrobble}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-surface-active peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
+                      </label>
+                    </div>
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        disabled={lastFmLoading}
+                        onClick={handleDisconnectLastFm}
+                        className="rounded-xl border border-border bg-surface px-4 py-2 text-xs font-medium text-status-offline hover:bg-status-offline/10 transition disabled:opacity-50"
+                      >
+                        {lastFmLoading ? 'İşleniyor…' : 'Bağlantıyı Kes'}
+                      </button>
+                    </div>
+                  </div>
+                ) : lastFmPendingToken ? (
+                  <div className="space-y-4 pt-2">
+                    <div className="rounded-lg bg-surface p-4 ring-1 ring-border text-xs space-y-3">
+                      <p className="text-secondary leading-relaxed">
+                        Tarayıcınızda Last.fm yetkilendirme sayfası açıldı. Lütfen hesabınızla giriş yapıp <strong>"Yes, allow access" (İzin Ver)</strong> butonuna tıklayın.
+                      </p>
+                      {lastFmAuthUrl && (
+                        <a
+                          href={lastFmAuthUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 text-accent hover:underline text-xs"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Sayfa açılmadıysa buraya tıklayın
+                        </a>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        disabled={lastFmLoading}
+                        onClick={handleCompleteLastFm}
+                        className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-xs font-semibold text-background hover:bg-accent-hover transition disabled:opacity-50 shadow-sm"
+                      >
+                        {lastFmLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                        Yetkilendirmeyi Tamamla
+                      </button>
+                      <button
+                        type="button"
+                        disabled={lastFmLoading}
+                        onClick={() => {
+                          setLastFmPendingToken(null);
+                          setLastFmAuthUrl(null);
+                          setLastFmFeedback(null);
+                        }}
+                        className="rounded-xl bg-surface px-4 py-2.5 text-xs font-medium text-tertiary hover:text-primary transition"
+                      >
+                        İptal
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4 pt-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-lg bg-surface p-4 ring-1 ring-border">
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-primary">
+                          Hesabınızı Bağlayın
+                        </div>
+                        <div className="text-[11px] text-tertiary">
+                          Last.fm hesabınızla tek tıkla oturum açın
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={lastFmLoading}
+                        onClick={handleStartLastFm}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-xs font-semibold text-background hover:bg-accent-hover transition disabled:opacity-50 shadow-sm shrink-0"
+                      >
+                        {lastFmLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                        Last.fm'e Bağlan
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {lastFmFeedback && (
+                  <p className="text-xs text-accent font-medium leading-relaxed pt-1">
+                    {lastFmFeedback}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-border/60 bg-surface-hover/30 p-4 text-xs text-tertiary space-y-1.5">
+                <p className="font-medium text-secondary">Last.fm Scrobble Nasıl Çalışır?</p>
+                <p className="leading-relaxed">
+                  • <strong>Now Playing:</strong> Şarkı çalmaya başladığında profilinizde <em>"Şu an dinleniyor"</em> olarak görünür.
+                </p>
+                <p className="leading-relaxed">
+                  • <strong>Scrobble:</strong> Şarkının en az %50'si veya 4 dakikası dinlendiğinde otomatik olarak dinleme geçmişinize kaydedilir.
                 </p>
               </div>
             </div>

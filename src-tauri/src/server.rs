@@ -2,7 +2,7 @@
 //! Masaüstü penceresi ile aynı ortak servis katmanını (db / runner / scanner)
 //! kullanır. REST, aynı React `dist` klasörünü de ağ tarayıcılarına sunar.
 
-use crate::{db, ffmpeg, runner, scanner};
+use crate::{db, ffmpeg, lastfm, runner, scanner};
 use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
@@ -234,6 +234,13 @@ pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
             "/api/settings/player",
             get(get_player_setting_route).post(set_player_setting_route),
         )
+        .route("/api/lastfm/status", get(lastfm_status_route))
+        .route("/api/lastfm/auth-url", post(lastfm_auth_url_route))
+        .route("/api/lastfm/complete-auth", post(lastfm_complete_auth_route))
+        .route("/api/lastfm/disconnect", post(lastfm_disconnect_route))
+        .route("/api/lastfm/settings", post(lastfm_settings_route))
+        .route("/api/lastfm/now-playing", post(lastfm_now_playing_route))
+        .route("/api/lastfm/scrobble", post(lastfm_scrobble_route))
         .fallback_service(ServeDir::new(static_root).append_index_html_on_directories(true))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -1726,6 +1733,211 @@ async fn media_probe_route(
         success: false,
         duration: None,
     })
+}
+
+#[derive(Deserialize)]
+pub struct LastfmCompletePayload {
+    pub token: String,
+}
+
+#[derive(Deserialize)]
+pub struct LastfmSettingsPayload {
+    pub enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub struct LastfmNowPlayingPayload {
+    pub artist: String,
+    pub track: String,
+    pub album: Option<String>,
+    pub duration: Option<u64>,
+}
+
+#[derive(Deserialize)]
+pub struct LastfmScrobblePayload {
+    pub artist: String,
+    pub track: String,
+    pub timestamp: u64,
+    pub album: Option<String>,
+    pub duration: Option<u64>,
+}
+
+async fn lastfm_status_route(
+    State(st): State<ServerState>,
+) -> Result<Json<lastfm::LastFmStatus>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    let status = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        Ok::<_, String>(lastfm::get_status(&conn))
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    Ok(Json(status))
+}
+
+async fn lastfm_auth_url_route(
+    State(st): State<ServerState>,
+) -> Result<Json<lastfm::AuthUrlResponse>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    let keys = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        Ok::<_, String>(lastfm::resolve_api_keys(Some(&conn)))
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    let (api_key, _) = keys.ok_or_else(|| {
+        internal_error("Last.fm API Key bulunamadı (.env dosyasını kontrol edin)".to_string())
+    })?;
+
+    let res = lastfm::start_auth(&api_key)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(res))
+}
+
+async fn lastfm_complete_auth_route(
+    State(st): State<ServerState>,
+    Json(payload): Json<LastfmCompletePayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    let keys = tokio::task::spawn_blocking({
+        let db_path = db_path.clone();
+        move || {
+            let conn = db::open(&db_path)?;
+            Ok::<_, String>(lastfm::resolve_api_keys(Some(&conn)))
+        }
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    let (api_key, secret) = keys.ok_or_else(|| internal_error("Last.fm API Key bulunamadı".to_string()))?;
+    let (username, session_key) = lastfm::create_session(&api_key, &secret, &payload.token)
+        .await
+        .map_err(internal_error)?;
+
+    let user_clone = username.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::set_setting(&conn, "lastfm_username", &user_clone)?;
+        db::set_setting(&conn, "lastfm_session_key", &session_key)?;
+        db::set_setting(&conn, "lastfm_scrobble_enabled", "true")?;
+        Ok::<_, String>(())
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "username": username
+    })))
+}
+
+async fn lastfm_disconnect_route(
+    State(st): State<ServerState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        lastfm::disconnect(&conn)
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+async fn lastfm_settings_route(
+    State(st): State<ServerState>,
+    Json(payload): Json<LastfmSettingsPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        lastfm::set_scrobble_enabled(&conn, payload.enabled)
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+async fn lastfm_now_playing_route(
+    State(st): State<ServerState>,
+    Json(p): Json<LastfmNowPlayingPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    let creds = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        let status = lastfm::get_status(&conn);
+        if !status.connected || !status.scrobble_enabled {
+            return Ok::<_, String>(None);
+        }
+        let keys = lastfm::resolve_api_keys(Some(&conn));
+        let sk = db::get_setting_opt(&conn, "lastfm_session_key")?;
+        Ok(keys.zip(sk))
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    if let Some(((api_key, secret), sk)) = creds {
+        let _ = lastfm::update_now_playing(
+            &api_key,
+            &secret,
+            &sk,
+            &p.artist,
+            &p.track,
+            p.album.as_deref(),
+            p.duration,
+        )
+        .await;
+    }
+
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+async fn lastfm_scrobble_route(
+    State(st): State<ServerState>,
+    Json(p): Json<LastfmScrobblePayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiResponse>)> {
+    let db_path = st.db_path.clone();
+    let creds = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        let status = lastfm::get_status(&conn);
+        if !status.connected || !status.scrobble_enabled {
+            return Ok::<_, String>(None);
+        }
+        let keys = lastfm::resolve_api_keys(Some(&conn));
+        let sk = db::get_setting_opt(&conn, "lastfm_session_key")?;
+        Ok(keys.zip(sk))
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    if let Some(((api_key, secret), sk)) = creds {
+        let _ = lastfm::scrobble(
+            &api_key,
+            &secret,
+            &sk,
+            &p.artist,
+            &p.track,
+            p.timestamp,
+            p.album.as_deref(),
+            p.duration,
+        )
+        .await;
+    }
+
+    Ok(Json(serde_json::json!({ "success": true })))
 }
 
 #[cfg(test)]

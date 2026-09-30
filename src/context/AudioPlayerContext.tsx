@@ -6,7 +6,12 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { streamUrl, type MediaItem } from '../api/client';
+import {
+  sendLastFmNowPlaying,
+  sendLastFmScrobble,
+  streamUrl,
+  type MediaItem,
+} from '../api/client';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
@@ -60,6 +65,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [isQueueOpen, setIsQueueOpen] = useState<boolean>(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const trackStartTimeRef = useRef<number>(0);
+  const hasScrobbledRef = useRef<boolean>(false);
+  const currentTrackRef = useRef<MediaItem | null>(null);
 
   // Audio elementini başlat
   useEffect(() => {
@@ -68,7 +76,27 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     audioRef.current = audio;
 
     const handleTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
+      const cur = audio.currentTime;
+      setCurrentTime(cur);
+
+      // Last.fm Scrobble: Şarkının en az %50'si veya 240 saniyesi dinlendiğinde (şarkı >= 30 sn)
+      const t = currentTrackRef.current;
+      if (t && !hasScrobbledRef.current) {
+        const dur = t.duration || audio.duration || 0;
+        if (dur >= 30) {
+          const threshold = Math.min(240, dur / 2);
+          if (cur >= threshold) {
+            hasScrobbledRef.current = true;
+            sendLastFmScrobble(
+              t.artist || 'Unknown Artist',
+              t.title,
+              trackStartTimeRef.current,
+              t.album,
+              dur,
+            );
+          }
+        }
+      }
     };
 
     const handleDurationChange = () => {
@@ -116,9 +144,32 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     const audio = audioRef.current;
     if (!audio) return;
 
+    // Önceki şarkı scrobble koşulunu karşılamışsa ama henüz tetiklenmediyse gönder
+    const prev = currentTrackRef.current;
+    if (prev && !hasScrobbledRef.current && audio.currentTime > 0) {
+      const prevDur = prev.duration || audio.duration || 0;
+      if (prevDur >= 30 && audio.currentTime >= Math.min(240, prevDur / 2)) {
+        hasScrobbledRef.current = true;
+        sendLastFmScrobble(
+          prev.artist || 'Unknown Artist',
+          prev.title,
+          trackStartTimeRef.current,
+          prev.album,
+          prevDur,
+        );
+      }
+    }
+
+    currentTrackRef.current = track;
+    hasScrobbledRef.current = false;
+    trackStartTimeRef.current = Math.floor(Date.now() / 1000);
+
     setCurrentTrack(track);
     setCurrentTime(0);
     setDuration(track.duration ?? 0);
+
+    // Last.fm'e "Şu an çalıyor" bildir
+    sendLastFmNowPlaying(track.artist || 'Unknown Artist', track.title, track.album, track.duration);
 
     const url = streamUrl(track.file_path);
     audio.src = url;
@@ -192,6 +243,20 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     if (!audio) return;
 
     const handleEnded = () => {
+      const t = currentTrackRef.current;
+      if (t && !hasScrobbledRef.current) {
+        const dur = t.duration || audio.duration || 0;
+        if (dur >= 30) {
+          hasScrobbledRef.current = true;
+          sendLastFmScrobble(
+            t.artist || 'Unknown Artist',
+            t.title,
+            trackStartTimeRef.current,
+            t.album,
+            dur,
+          );
+        }
+      }
       nextTrack();
     };
 

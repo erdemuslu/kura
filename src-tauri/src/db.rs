@@ -322,6 +322,12 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), Stri
     .map_err(|e| e.to_string())
 }
 
+pub fn delete_setting(conn: &Connection, key: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM app_settings WHERE key = ?1", params![key])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// İndekste kalmış gizli dosya kayıtlarını siler (basename '.' ile başlayanlar:
 /// macOS `._*` AppleDouble çöpleri, `.DS_Store` vb.). Silinen kayıt sayısını döner.
 ///
