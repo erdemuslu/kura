@@ -113,6 +113,7 @@ pub struct ArtistSummary {
     pub artist: String,
     pub album_count: i64,
     pub track_count: i64,
+    pub folder_path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -122,6 +123,7 @@ pub struct AlbumSummary {
     pub track_count: i64,
     pub total_duration: Option<i64>,
     pub has_cover: bool,
+    pub folder_path: Option<String>,
 }
 
 /// Film tarayıcı: bir klasördeki tüm video dosyalarını temsil eden grup kartı.
@@ -142,6 +144,7 @@ pub struct ShowSummary {
     pub show_title: String,
     pub season_count: i64,
     pub episode_count: i64,
+    pub folder_path: Option<String>,
 }
 
 /// Dizi tarayıcı: sezon özeti.
@@ -149,6 +152,28 @@ pub struct ShowSummary {
 pub struct SeasonSummary {
     pub season: i64,
     pub episode_count: i64,
+}
+
+/// Albüm adındaki [Disc 1], (Disc 2), CD 1 vb. ekleri temizler ve disk numarasını çıkarır.
+pub fn clean_album_and_disc(album: &str, current_disc: Option<i64>) -> (String, Option<i64>) {
+    let trimmed = album.trim();
+    let lower = trimmed.to_lowercase();
+    let markers = ["[disc ", "(disc ", "[cd ", "(cd ", " disc ", " cd "];
+    for marker in markers {
+        if let Some(idx) = lower.rfind(marker) {
+            let rest = &trimmed[idx + marker.len()..];
+            let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if !num_str.is_empty() {
+                if let Ok(d) = num_str.parse::<i64>() {
+                    let clean = trimmed[..idx].trim().trim_end_matches(['-', '_', ':']).trim();
+                    if !clean.is_empty() {
+                        return (clean.to_string(), current_disc.or(Some(d)));
+                    }
+                }
+            }
+        }
+    }
+    (trimmed.to_string(), current_disc)
 }
 
 pub fn open(db_path: &Path) -> Result<Connection, String> {
@@ -164,7 +189,55 @@ pub fn init(db_path: &Path) -> Result<Connection, String> {
     ensure_default_setting(&conn, "remote_auth_enabled", "false")?;
     // Uzaktan erişim token'ı ilk açılışta bir kez üretilir ve saklanır.
     ensure_default_setting(&conn, "remote_token", &Uuid::new_v4().to_string())?;
+    backfill_and_normalize_music(&conn)?;
     Ok(conn)
+}
+
+fn backfill_and_normalize_music(conn: &Connection) -> Result<(), String> {
+    // 1. folder_path NULL olan müzik ve video kayıtlarına parent path backfill et
+    let mut stmt = conn
+        .prepare("SELECT id, file_path FROM media_items WHERE folder_path IS NULL")
+        .map_err(|e| e.to_string())?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(stmt);
+
+    if !rows.is_empty() {
+        let mut update_stmt = conn
+            .prepare("UPDATE media_items SET folder_path = ?1 WHERE id = ?2")
+            .map_err(|e| e.to_string())?;
+        for (id, file_path) in rows {
+            if let Some(parent) = Path::new(&file_path).parent() {
+                let _ = update_stmt.execute(params![parent.to_string_lossy().to_string(), id]);
+            }
+        }
+    }
+
+    // 2. Müzik albüm adlarında [Disc 1], [Disc 2], [CD 1] gibi ekleri normalize et
+    let mut stmt2 = conn
+        .prepare("SELECT id, album, disc_number FROM media_items WHERE media_type = 'music' AND album IS NOT NULL")
+        .map_err(|e| e.to_string())?;
+    let music_rows: Vec<(String, String, Option<i64>)> = stmt2
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(stmt2);
+
+    let mut update_album_stmt = conn
+        .prepare("UPDATE media_items SET album = ?1, disc_number = ?2 WHERE id = ?3")
+        .map_err(|e| e.to_string())?;
+    for (id, album, disc_num) in music_rows {
+        let (clean_album, extracted_disc) = clean_album_and_disc(&album, disc_num);
+        if clean_album != album || extracted_disc != disc_num {
+            let _ = update_album_stmt.execute(params![clean_album, extracted_disc, id]);
+        }
+    }
+
+    Ok(())
 }
 
 /// Mevcut DB'lerde (v0.1'de oluşturulan) yeni kolonları idempotent ekler:
@@ -194,6 +267,7 @@ fn ensure_columns(conn: &Connection) -> Result<(), String> {
         ("sample_rate", "INTEGER"),
         ("bit_depth", "INTEGER"),
         ("channels", "INTEGER"),
+        ("album_artist", "TEXT"),
     ] {
         if !existing.iter().any(|c| c == col) {
             conn.execute(
@@ -411,6 +485,13 @@ const MEDIA_COLS: &str = "id, title, artist, album, media_type, file_path, file_
                           cover_image_path, created_at, updated_at";
 
 fn map_media_item(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
+    let duration: Option<i64> = match row.get_ref(9)? {
+        rusqlite::types::ValueRef::Null => None,
+        rusqlite::types::ValueRef::Integer(i) => Some(i),
+        rusqlite::types::ValueRef::Real(r) => Some(r.round() as i64),
+        _ => None,
+    };
+
     Ok(MediaItem {
         id: row.get(0)?,
         title: row.get(1)?,
@@ -421,7 +502,7 @@ fn map_media_item(row: &rusqlite::Row) -> rusqlite::Result<MediaItem> {
         file_size: row.get(6)?,
         disk_label: row.get(7)?,
         format: row.get(8)?,
-        duration: row.get(9)?,
+        duration,
         track_number: row.get(10)?,
         disc_number: row.get(11)?,
         year: row.get(12)?,
@@ -447,10 +528,11 @@ pub fn list_artists(
     conn: &Connection,
     query: Option<&str>,
 ) -> Result<Vec<ArtistSummary>, String> {
-    let sql = "SELECT eff_artist, COUNT(DISTINCT eff_album), COUNT(*)
+    let sql = "SELECT eff_artist, COUNT(DISTINCT eff_album), COUNT(*), MIN(folder_path)
                FROM (
                    SELECT COALESCE(NULLIF(artist, ''), :unknown_artist) AS eff_artist,
-                          COALESCE(NULLIF(album, ''), :unknown_album) AS eff_album
+                          COALESCE(NULLIF(album, ''), :unknown_album) AS eff_album,
+                          folder_path
                    FROM media_items
                    WHERE media_type = 'music'
                      AND (:q IS NULL OR artist LIKE :q OR album LIKE :q OR title LIKE :q)
@@ -471,6 +553,7 @@ pub fn list_artists(
                     artist: row.get(0)?,
                     album_count: row.get(1)?,
                     track_count: row.get(2)?,
+                    folder_path: row.get(3)?,
                 })
             },
         )
@@ -481,26 +564,47 @@ pub fn list_artists(
 }
 
 /// Albümleri (albüm, sanatçı, şarkı sayısı, toplam süre) listeler.
-/// `artist` verilirse yalnız o sanatçının albümleri döner.
+/// Albümler tekil albüm adına göre gruplanır; çok sanatçılı albümlerde (compilation / düetler vb.)
+/// parçalanma önlenerek en çok parçası olan baskın sanatçı veya 'Various Artists' seçilir.
+/// `artist` verilirse o sanatçının parçası olan albümler döner.
 pub fn list_albums(
     conn: &Connection,
     artist: Option<&str>,
     query: Option<&str>,
 ) -> Result<Vec<AlbumSummary>, String> {
-    let sql = "SELECT eff_album, eff_artist, COUNT(*), SUM(duration),
-                      MAX(CASE WHEN cover_image_path IS NOT NULL THEN 1 ELSE 0 END)
+    let sql = "SELECT m.eff_album,
+                      COALESCE(
+                          CASE WHEN COUNT(DISTINCT m.eff_artist) = 1 THEN MIN(m.eff_artist) ELSE NULL END,
+                          (
+                              SELECT a.artist 
+                              FROM media_items a 
+                              WHERE a.media_type = 'music' 
+                                AND COALESCE(NULLIF(a.album, ''), :unknown_album) = m.eff_album
+                              GROUP BY a.artist 
+                              ORDER BY count(*) DESC 
+                              LIMIT 1
+                          ),
+                          'Various Artists'
+                      ) AS eff_artist,
+                      COUNT(*) AS track_count,
+                      SUM(m.duration) AS total_duration,
+                      MAX(CASE WHEN m.cover_image_path IS NOT NULL THEN 1 ELSE 0 END) AS has_cover,
+                      MIN(m.folder_path) AS folder_path
                FROM (
                    SELECT COALESCE(NULLIF(album, ''), :unknown_album) AS eff_album,
                           COALESCE(NULLIF(artist, ''), :unknown_artist) AS eff_artist,
-                          duration, cover_image_path
+                          duration,
+                          cover_image_path,
+                          folder_path
                    FROM media_items
                    WHERE media_type = 'music'
                      AND (:artist IS NULL
-                          OR COALESCE(NULLIF(artist, ''), :unknown_artist) = :artist)
+                          OR COALESCE(NULLIF(artist, ''), :unknown_artist) = :artist
+                          OR album IN (SELECT album FROM media_items WHERE media_type = 'music' AND artist = :artist))
                      AND (:q IS NULL OR album LIKE :q OR artist LIKE :q OR title LIKE :q)
-               )
-               GROUP BY eff_album, eff_artist
-               ORDER BY eff_album COLLATE NOCASE";
+               ) m
+               GROUP BY m.eff_album
+               ORDER BY m.eff_album COLLATE NOCASE";
 
     let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
     let albums = stmt
@@ -518,6 +622,7 @@ pub fn list_albums(
                     track_count: row.get(2)?,
                     total_duration: row.get(3)?,
                     has_cover: row.get::<_, i64>(4)? != 0,
+                    folder_path: row.get(5)?,
                 })
             },
         )
@@ -528,17 +633,17 @@ pub fn list_albums(
 }
 
 /// Bir albümün şarkılarını disk + track numarasına göre sıralı döndürür.
+/// Albümdeki tüm parçalar (derleme/düet dahil) eksiksiz gelir.
 pub fn album_tracks(
     conn: &Connection,
     album: &str,
-    artist: &str,
+    _artist: &str,
 ) -> Result<Vec<MediaItem>, String> {
     let sql = &format!(
         "SELECT {MEDIA_COLS}
          FROM media_items
          WHERE media_type = 'music'
            AND COALESCE(NULLIF(album, ''), :unknown_album) = :album
-           AND COALESCE(NULLIF(artist, ''), :unknown_artist) = :artist
          ORDER BY COALESCE(disc_number, 1), COALESCE(track_number, 999999),
                   title COLLATE NOCASE"
     );
@@ -548,9 +653,7 @@ pub fn album_tracks(
         .query_map(
             named_params! {
                 ":unknown_album": UNKNOWN_ALBUM,
-                ":unknown_artist": UNKNOWN_ARTIST,
                 ":album": album,
-                ":artist": artist,
             },
             map_media_item,
         )
@@ -599,11 +702,10 @@ pub fn cover_path_for_album(
         "SELECT cover_image_path FROM media_items
          WHERE media_type = 'music' AND cover_image_path IS NOT NULL
            AND COALESCE(NULLIF(album, ''), :unknown_album) = :album
-           AND COALESCE(NULLIF(artist, ''), :unknown_artist) = :artist
+         ORDER BY CASE WHEN artist = :artist THEN 0 ELSE 1 END
          LIMIT 1",
         named_params! {
             ":unknown_album": UNKNOWN_ALBUM,
-            ":unknown_artist": UNKNOWN_ARTIST,
             ":album": album,
             ":artist": artist,
         },
@@ -620,20 +722,17 @@ pub fn cover_path_for_album(
 pub fn set_album_cover(
     conn: &Connection,
     album: &str,
-    artist: &str,
+    _artist: &str,
     cover_path: &str,
 ) -> Result<u64, String> {
     conn.execute(
         "UPDATE media_items
          SET cover_image_path = :path, updated_at = CURRENT_TIMESTAMP
          WHERE media_type = 'music'
-           AND COALESCE(NULLIF(album, ''), :unknown_album) = :album
-           AND COALESCE(NULLIF(artist, ''), :unknown_artist) = :artist",
+           AND COALESCE(NULLIF(album, ''), :unknown_album) = :album",
         named_params! {
             ":unknown_album": UNKNOWN_ALBUM,
-            ":unknown_artist": UNKNOWN_ARTIST,
             ":album": album,
-            ":artist": artist,
             ":path": cover_path,
         },
     )
@@ -710,10 +809,11 @@ pub fn movie_files(conn: &Connection, group_key: &str) -> Result<Vec<MediaItem>,
 
 /// Dizileri sezon/bölüm sayılarıyla listeler (dizi tarayıcı üst seviye).
 pub fn list_shows(conn: &Connection, query: Option<&str>) -> Result<Vec<ShowSummary>, String> {
-    let sql = "SELECT eff_show, COUNT(DISTINCT COALESCE(season, 1)), COUNT(*)
+    let sql = "SELECT eff_show, COUNT(DISTINCT COALESCE(season, 1)), COUNT(*), MIN(folder_path)
                FROM (
                    SELECT COALESCE(NULLIF(show_title, ''), :unknown_show) AS eff_show,
-                          season
+                          season,
+                          folder_path
                    FROM media_items
                    WHERE media_type = 'series'
                      AND (:q IS NULL OR show_title LIKE :q OR title LIKE :q)
@@ -733,6 +833,7 @@ pub fn list_shows(conn: &Connection, query: Option<&str>) -> Result<Vec<ShowSumm
                     show_title: row.get(0)?,
                     season_count: row.get(1)?,
                     episode_count: row.get(2)?,
+                    folder_path: row.get(3)?,
                 })
             },
         )
@@ -740,6 +841,20 @@ pub fn list_shows(conn: &Connection, query: Option<&str>) -> Result<Vec<ShowSumm
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(shows)
+}
+
+/// Belirtilen dizin veya yol öneki altındaki tüm medya kayıtlarını siler.
+pub fn remove_source_path(conn: &Connection, path_prefix: &str) -> Result<usize, String> {
+    let normalized = path_prefix.trim_end_matches(['/', '\\']);
+    let pattern1 = format!("{normalized}%");
+    let pattern2 = format!("{normalized}/%");
+    let count = conn
+        .execute(
+            "DELETE FROM media_items WHERE file_path LIKE ?1 OR file_path LIKE ?2 OR folder_path LIKE ?1 OR folder_path LIKE ?2",
+            params![pattern1, pattern2],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(count)
 }
 
 /// Bir dizinin sezonlarını bölüm sayılarıyla listeler.

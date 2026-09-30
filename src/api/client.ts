@@ -25,6 +25,7 @@ export interface MediaItem {
   episode: number | null;
   folder_path: string | null;
   subtitle_count: number;
+  subtitle_path?: string | null;
   genre: string | null;
   sample_rate: number | null;
   bit_depth: number | null;
@@ -39,6 +40,7 @@ export interface ArtistSummary {
   artist: string;
   album_count: number;
   track_count: number;
+  folder_path?: string | null;
 }
 
 /** Film tarayıcı: bir klasördeki tüm video dosyalarını temsil eden grup kartı. */
@@ -56,6 +58,7 @@ export interface ShowSummary {
   show_title: string;
   season_count: number;
   episode_count: number;
+  folder_path?: string | null;
 }
 
 /** Dizi tarayıcı: sezon özeti. */
@@ -81,6 +84,7 @@ export interface AlbumSummary {
   track_count: number;
   total_duration: number | null;
   has_cover: boolean;
+  folder_path?: string | null;
 }
 
 export interface DiskInfo {
@@ -142,6 +146,7 @@ export const AUDIO_PLAYERS: PlayerOption[] = [
 ];
 
 export const VIDEO_PLAYERS: PlayerOption[] = [
+  { id: 'in_app', label: 'Kura (Gömülü / Uygulama İçi)' },
   { id: 'system', label: 'Sistem Varsayılanı' },
   { id: 'IINA', label: 'IINA' },
   { id: 'VLC', label: 'VLC' },
@@ -258,6 +263,21 @@ export async function startScan(
   return res.json();
 }
 
+/** Bir kaynak dizini altındaki tüm medyaları kütüphaneden siler. */
+export async function removeSourcePath(path: string): Promise<number> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<number>('remove_source_path', { path });
+  }
+  const res = await restFetch('/api/library/remove-source', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+  const data = await res.json();
+  return data.deleted ?? 0;
+}
+
 /**
  * Uzaktan kumanda bilgisi (sadece masaüstünde; IPC üzerinden).
  * Tarayıcıdan REST ile erişilemez — token asla ağ üzerinden yayınlanmaz.
@@ -366,9 +386,99 @@ export function streamUrl(filePath: string): string {
   return `${base}/api/stream?${params.toString()}`;
 }
 
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+/**
+ * Video akış URL'si — MP4/MOV native formatlar doğrudan HTTP Range ile,
+ * MKV/AVI gibi formatlar ise Safari / WebKit uyumlu HLS (.m3u8) akışıyla beslenir.
+ */
+export function streamVideoUrl(filePath: string, startSeconds?: number): string {
+  const base = isRunningInTauri() ? 'http://localhost:8080' : '';
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  const isNative = ['mp4', 'm4v', 'mov', 'webm'].includes(ext);
+
+  const params = new URLSearchParams({ path: filePath });
+  if (startSeconds !== undefined && startSeconds > 0) {
+    params.set('start', startSeconds.toFixed(3));
+  }
+  const token = getRemoteToken();
+  if (token) params.set('token', token);
+
+  if (isNative && (!startSeconds || startSeconds <= 0)) {
+    return `${base}/api/stream?${params.toString()}`;
+  }
+
+  // Non-native (mkv vb.) veya seek gerektiren durumlarda Apple HLS motoru
+  const startSec = Math.floor(startSeconds || 0);
+  const session = `vid_${hashString(filePath)}_${startSec}`;
+  return `${base}/api/hls/${session}/master.m3u8?${params.toString()}`;
+}
+
+/**
+ * Medya dosyasının süresini hızlıca (<50ms) sunucudan sorgular.
+ */
+export async function probeMediaDuration(filePath: string): Promise<number | null> {
+  try {
+    const base = isRunningInTauri() ? 'http://localhost:8080' : '';
+    const params = new URLSearchParams({ path: filePath });
+    const token = getRemoteToken();
+    if (token) params.set('token', token);
+    const res = await fetch(`${base}/api/media/probe?${params.toString()}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data.duration === 'number' && data.duration > 0 ? data.duration : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Altyazı URL'si — SRT'yi anında WebVTT'ye çevirir veya MKV dahili altyazısını çeker.
+ */
+export function subtitleUrl(filePath: string, subtitlePath?: string, track = 0): string {
+  const base = isRunningInTauri() ? 'http://localhost:8080' : '';
+  const params = new URLSearchParams();
+  if (subtitlePath) {
+    params.set('path', subtitlePath);
+  } else {
+    params.set('video_path', filePath);
+    params.set('track', String(track));
+  }
+  const token = getRemoteToken();
+  if (token) params.set('token', token);
+  return `${base}/api/subtitle?${params.toString()}`;
+}
+
+/** FFmpeg gömülü veya sistemde mevcut mu kontrolü */
+export async function checkFfmpegAvailable(): Promise<boolean> {
+  if (isRunningInTauri()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<boolean>('is_ffmpeg_available');
+    } catch {
+      return false;
+    }
+  } else {
+    try {
+      const res = await restFetch('/api/ffmpeg/status');
+      const data = (await res.json()) as { available: boolean };
+      return Boolean(data.available);
+    } catch {
+      return false;
+    }
+  }
+}
+
 /** Oynatıcı ayarını getirir (IPC veya REST / localStorage fallback). */
 export async function getPlayerSetting(kind: 'audio' | 'video'): Promise<string> {
-  const defaultPlayer = kind === 'audio' ? 'in_app' : 'system';
+  const defaultPlayer = 'in_app';
   if (isRunningInTauri()) {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -582,3 +692,37 @@ export function diskLabelFromPath(path: string): string {
   if (windowsMatch) return windowsMatch[1]!.toUpperCase();
   return '';
 }
+
+export interface LyricsResult {
+  text: string;
+  is_synced: boolean;
+}
+
+/** Şarkı sözlerini (sidecar .lrc veya gömülü etiket) çeker. */
+export async function getLyrics(filePath: string): Promise<LyricsResult | null> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<LyricsResult | null>('get_lyrics', { filePath });
+  }
+  try {
+    const res = await restFetch(`/api/music/lyrics?path=${encodeURIComponent(filePath)}`);
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Dosyayı macOS Finder'da vurgular. */
+export async function revealInFinder(filePath: string): Promise<void> {
+  if (isRunningInTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('reveal_in_finder', { filePath });
+    return;
+  }
+  await restFetch('/api/open-folder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: filePath }),
+  });
+}
+

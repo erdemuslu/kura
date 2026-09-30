@@ -14,6 +14,8 @@
     "@tanstack/react-query": "^5.59.0",
     "@tauri-apps/api": "^2.1.0",
     "@tauri-apps/plugin-dialog": "^2.7.3",
+    "hls.js": "^1.7.3",
+    "lucide-react": "^1.48.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -23,6 +25,7 @@
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
+    "ffmpeg-static": "^5.3.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.6.3",
     "vite": "^6.0.0"

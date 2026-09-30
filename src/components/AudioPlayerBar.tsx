@@ -1,7 +1,21 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ListMusic,
+  Pause,
+  Play,
+  Repeat,
+  Repeat1,
+  Shuffle,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react';
 import { coverUrl } from '../api/client';
 import { useAudioPlayer } from '../context/AudioPlayerContext';
-import { formatDuration, getAudioQualityInfo } from '../lib/format';
+import { formatDuration, formatSize, getAudioQualityInfo } from '../lib/format';
+import NowPlayingModal from './NowPlayingModal';
 
 export default function AudioPlayerBar() {
   const {
@@ -25,20 +39,31 @@ export default function AudioPlayerBar() {
     toggleRepeat,
     toggleShuffle,
     setIsQueueOpen,
+    playTrack,
     playQueue,
     removeFromQueue,
     clearQueue,
   } = useAudioPlayer();
 
-  const queueRef = useRef<HTMLDivElement | null>(null);
+  const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
+  const [hoverSeekTime, setHoverSeekTime] = useState<number | null>(null);
+  const [hoverSeekPos, setHoverSeekPos] = useState<number>(0);
+  const [isHoveringProgress, setIsHoveringProgress] = useState(false);
+  const queueDrawerRef = useRef<HTMLDivElement | null>(null);
+  const queueToggleBtnRef = useRef<HTMLButtonElement | null>(null);
 
-  // Dışarı tıklandığında kuyruk panelini kapatma
+  // Kuyruk dışına tıklanınca kapat (açma butonuna tıklandığında çakışmayı önlemek için buton hariç tutulur)
   useEffect(() => {
     if (!isQueueOpen) return;
     const handleOutside = (e: MouseEvent) => {
-      if (queueRef.current && !queueRef.current.contains(e.target as Node)) {
-        setIsQueueOpen(false);
+      const target = e.target as Node;
+      if (
+        queueDrawerRef.current?.contains(target) ||
+        queueToggleBtnRef.current?.contains(target)
+      ) {
+        return;
       }
+      setIsQueueOpen(false);
     };
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
@@ -49,29 +74,77 @@ export default function AudioPlayerBar() {
   const currentDuration = duration || currentTrack.duration || 0;
   const progressPercent =
     currentDuration > 0 ? Math.min(100, (currentTime / currentDuration) * 100) : 0;
-  const qualityInfo = getAudioQualityInfo(currentTrack);
+  const quality = getAudioQualityInfo(currentTrack);
+  const cover = coverUrl(currentTrack.album || 'Unknown', currentTrack.artist || 'Unknown');
+
+  // Sade format etiketi: FLAC · 16/44.1
+  const compactFormat = `${currentTrack.format.toUpperCase()}${
+    currentTrack.bit_depth && currentTrack.sample_rate
+      ? ` · ${currentTrack.bit_depth}/${Math.round(currentTrack.sample_rate / 100) / 10}`
+      : ''
+  }`;
+
+  const handleProgressMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    setHoverSeekTime(ratio * currentDuration);
+    setHoverSeekPos(e.clientX);
+  };
+
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    seek(ratio * currentDuration);
+  };
 
   return (
     <>
-      {/* Çalma Sırası (Queue) Paneli */}
+      {/* Tam Ekran Şimdi Çalıyor Görünümü */}
+      <NowPlayingModal
+        isOpen={isNowPlayingOpen}
+        onClose={() => setIsNowPlayingOpen(false)}
+        track={currentTrack}
+        queue={queue}
+        queueIndex={queueIndex}
+        isPlaying={isPlaying}
+        currentTime={currentTime}
+        duration={currentDuration}
+        volume={volume}
+        isMuted={isMuted}
+        repeatMode={repeatMode}
+        isShuffle={isShuffle}
+        onTogglePlay={togglePlay}
+        onNext={nextTrack}
+        onPrev={prevTrack}
+        onSeek={seek}
+        onSetVolume={setVolume}
+        onToggleMute={toggleMute}
+        onToggleRepeat={toggleRepeat}
+        onToggleShuffle={toggleShuffle}
+        onPlayQueueItem={(idx) => playQueue(queue, idx)}
+        onPlayTrack={playTrack}
+        onRemoveFromQueue={removeFromQueue}
+      />
+
+      {/* Sağdan Açılan Kuyruk (Drawer) */}
       {isQueueOpen && (
-        <div
-          ref={queueRef}
-          className="fixed bottom-24 right-4 z-50 flex max-h-[28rem] w-80 flex-col overflow-hidden rounded-2xl bg-slate-900/95 shadow-2xl ring-1 ring-slate-700 backdrop-blur-md sm:w-96"
+        <aside
+          ref={queueDrawerRef}
+          className="fixed bottom-0 right-0 top-0 z-50 flex w-80 sm:w-96 flex-col bg-surface shadow-2xl ring-1 ring-border animate-in slide-in-from-right duration-200"
         >
-          <div className="flex items-center justify-between border-b border-slate-800 p-3">
+          <header className="flex items-center justify-between border-b border-border px-4 py-3.5">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-slate-100">Çalma Sırası</span>
-              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+              <span className="font-serif text-base font-normal text-primary">Çalma Sırası</span>
+              <span className="rounded-full bg-surface-hover px-2 py-0.5 text-xs text-secondary font-mono">
                 {queue.length}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               {queue.length > 0 && (
                 <button
                   type="button"
                   onClick={clearQueue}
-                  className="text-xs text-slate-400 hover:text-red-400 transition"
+                  className="text-xs text-tertiary hover:text-status-offline transition"
                 >
                   Temizle
                 </button>
@@ -79,41 +152,44 @@ export default function AudioPlayerBar() {
               <button
                 type="button"
                 onClick={() => setIsQueueOpen(false)}
-                className="text-slate-400 hover:text-slate-200 transition text-sm px-1.5"
+                className="text-tertiary hover:text-primary transition p-1"
               >
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
-          </div>
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60 p-1">
+          </header>
+
+          <div className="flex-1 overflow-y-auto divide-y divide-border/40 p-1">
             {queue.map((track, i) => {
               const isCurrent = i === queueIndex;
               return (
                 <div
                   key={`${track.file_path}-${i}`}
-                  className={`group flex items-center justify-between gap-2 rounded-lg p-2 text-left text-sm transition ${
-                    isCurrent
-                      ? 'bg-sky-500/15 text-sky-300 font-medium'
-                      : 'hover:bg-slate-800/60 text-slate-300'
+                  className={`group flex items-center justify-between gap-2.5 rounded-lg px-3 py-2 text-left transition ${
+                    isCurrent ? 'bg-accent/15 text-accent' : 'hover:bg-surface-hover text-secondary'
                   }`}
                 >
                   <button
                     type="button"
                     onClick={() => playQueue(queue, i)}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                   >
-                    <span className="w-5 text-center text-xs text-slate-500">
+                    <span className="w-5 text-center font-mono text-[11px] text-tertiary">
                       {isCurrent ? (isPlaying ? '▶' : '⏸') : i + 1}
                     </span>
                     <div className="min-w-0 flex-1 truncate">
-                      <p className="truncate text-xs sm:text-sm text-slate-100">
+                      <p
+                        className={`truncate text-xs ${
+                          isCurrent ? 'font-semibold text-accent' : 'font-medium text-primary'
+                        }`}
+                      >
                         {track.title}
                       </p>
-                      <p className="truncate text-[11px] text-slate-400">
+                      <p className="truncate text-[11px] text-tertiary">
                         {track.artist || 'Bilinmeyen Sanatçı'}
                       </p>
                     </div>
-                    <span className="text-xs text-slate-400 font-mono">
+                    <span className="font-mono text-[11px] text-tertiary shrink-0">
                       {formatDuration(track.duration)}
                     </span>
                   </button>
@@ -121,168 +197,202 @@ export default function AudioPlayerBar() {
                     type="button"
                     onClick={() => removeFromQueue(i)}
                     title="Kuyruktan Çıkar"
-                    className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 text-xs px-1.5 transition"
+                    className="opacity-0 group-hover:opacity-100 text-tertiary hover:text-status-offline p-1 transition"
                   >
-                    ✕
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               );
             })}
           </div>
-        </div>
+        </aside>
       )}
 
-      {/* Alt Oynatıcı Çubuğu */}
-      <footer className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-800 bg-slate-950/95 backdrop-blur-lg text-slate-100 shadow-2xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2.5">
-          {/* Sol: Parça Bilgileri & Albüm Kapağı */}
+      {/* Alt Oynatıcı Çubuğu (72px) */}
+      <footer className="fixed bottom-0 left-0 right-0 z-40 h-[72px] bg-surface/95 backdrop-blur-2xl border-t border-border select-none shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+        {/* Üst Kenar Tam Genişlik İlerleme Çubuğu */}
+        <div
+          className="group/progress absolute -top-[3px] left-0 right-0 h-[6px] cursor-pointer z-50"
+          onMouseEnter={() => setIsHoveringProgress(true)}
+          onMouseLeave={() => setIsHoveringProgress(false)}
+          onMouseMove={handleProgressMouseMove}
+          onClick={handleProgressClick}
+        >
+          {/* Arka Plan İzi */}
+          <div className="h-[3px] w-full bg-border-hover transition-all group-hover/progress:h-[5px]" />
+          {/* İlerleme Dolgusu */}
+          <div
+            className="absolute top-0 left-0 h-[3px] bg-accent transition-all group-hover/progress:h-[5px]"
+            style={{ width: `${progressPercent}%` }}
+          />
+          {/* Tutamak (Hover'da görünür) */}
+          {isHoveringProgress && (
+            <div
+              className="absolute -top-[3px] h-3 w-3 -translate-x-1/2 rounded-full bg-accent shadow-md pointer-events-none"
+              style={{ left: `${progressPercent}%` }}
+            />
+          )}
+
+          {/* Zaman Önizleme Balonu (Tooltip) */}
+          {isHoveringProgress && hoverSeekTime !== null && (
+            <div
+              className="absolute -top-7 -translate-x-1/2 rounded bg-black/90 px-1.5 py-0.5 font-mono text-[10px] text-primary shadow-lg ring-1 ring-border pointer-events-none"
+              style={{ left: `${hoverSeekPos}px` }}
+            >
+              {formatDuration(Math.floor(hoverSeekTime))}
+            </div>
+          )}
+        </div>
+
+        {/* 3 Bölge: Sol, Orta, Sağ */}
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-4 sm:px-6">
+          {/* 1. Sol Bölge: 48px Kapak + Başlık/Sanatçı */}
           <div className="flex min-w-0 items-center gap-3 w-1/4 sm:w-1/3">
-            <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-emerald-600/30 to-teal-900/40 ring-1 ring-slate-700">
-              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white/20">
-                {currentTrack.album?.trim().slice(0, 1).toUpperCase() || '♪'}
-              </span>
+            <div
+              className="relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-[6px] bg-surface-hover ring-1 ring-border shadow transition hover:opacity-90 active:scale-95"
+              onClick={() => setIsNowPlayingOpen(true)}
+              title="Şimdi Çalıyor görünümünü aç"
+            >
               <img
-                src={coverUrl(
-                  currentTrack.album || 'Unknown',
-                  currentTrack.artist || 'Unknown',
-                )}
+                src={cover}
                 alt={currentTrack.album || ''}
-                className="absolute inset-0 h-full w-full object-cover"
+                className="h-full w-full object-cover"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
                 }}
               />
+              <div className="absolute inset-0 -z-10 flex items-center justify-center font-serif text-sm text-tertiary">
+                {currentTrack.album?.slice(0, 1) || '♪'}
+              </div>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-100" title={currentTrack.title}>
+              <p
+                className="truncate text-[13px] font-medium text-primary hover:text-accent cursor-pointer transition-colors"
+                onClick={() => setIsNowPlayingOpen(true)}
+                title={currentTrack.title}
+              >
                 {currentTrack.title}
               </p>
               <p
-                className="truncate text-xs text-slate-400"
+                className="truncate text-[11px] text-secondary hover:text-primary cursor-pointer transition-colors"
+                onClick={() => setIsNowPlayingOpen(true)}
                 title={`${currentTrack.artist || 'Bilinmeyen'} • ${currentTrack.album || ''}`}
               >
                 {currentTrack.artist || 'Bilinmeyen Sanatçı'}
-                {currentTrack.album ? ` • ${currentTrack.album}` : ''}
+                {currentTrack.album ? (
+                  <span className="text-tertiary"> — {currentTrack.album}</span>
+                ) : null}
               </p>
             </div>
           </div>
 
-          {/* Orta: Kontroller & İlerleme Çubuğu */}
-          <div className="flex flex-1 flex-col items-center max-w-xl gap-1">
-            <div className="flex items-center gap-3 sm:gap-5">
-              <button
-                type="button"
-                onClick={toggleShuffle}
-                title={isShuffle ? 'Karıştırma: Açık' : 'Karıştırma: Kapalı'}
-                className={`text-sm transition ${
-                  isShuffle ? 'text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                🔀
-              </button>
-              <button
-                type="button"
-                onClick={prevTrack}
-                title="Önceki"
-                className="text-slate-300 hover:text-white transition text-base"
-              >
-                ⏮
-              </button>
-              <button
-                type="button"
-                onClick={togglePlay}
-                title={isPlaying ? 'Duraklat' : 'Oynat'}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-500 text-white shadow-md transition hover:bg-sky-400 hover:scale-105 active:scale-95"
-              >
-                {isPlaying ? '⏸' : '▶'}
-              </button>
-              <button
-                type="button"
-                onClick={nextTrack}
-                title="Sonraki"
-                className="text-slate-300 hover:text-white transition text-base"
-              >
-                ⏭
-              </button>
-              <button
-                type="button"
-                onClick={toggleRepeat}
-                title={
-                  repeatMode === 'off'
-                    ? 'Tekrar: Kapalı'
-                    : repeatMode === 'all'
-                    ? 'Tekrar: Tüm Kuyruk'
-                    : 'Tekrar: Aynı Parça'
-                }
-                className={`text-sm transition ${
-                  repeatMode !== 'off'
-                    ? 'text-sky-400 font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {repeatMode === 'one' ? '🔂' : '🔁'}
-              </button>
-            </div>
-
-            {/* İlerleme & Zaman Çubuğu */}
-            <div className="flex w-full items-center gap-2 text-[11px] font-mono text-slate-400">
-              <span className="w-9 text-right shrink-0">
-                {formatDuration(Math.floor(currentTime)) || '0:00'}
-              </span>
-              <div className="relative flex flex-1 items-center">
-                <input
-                  type="range"
-                  min={0}
-                  max={currentDuration || 1}
-                  step={0.5}
-                  value={currentTime}
-                  onChange={(e) => seek(Number(e.target.value))}
-                  className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-slate-800 accent-sky-400 hover:bg-slate-700"
-                  style={{
-                    background: `linear-gradient(to right, rgb(56 189 248) ${progressPercent}%, rgb(30 41 59) ${progressPercent}%)`,
-                  }}
-                />
-              </div>
-              <span className="w-9 text-left shrink-0">
-                {formatDuration(Math.floor(currentDuration)) || '0:00'}
-              </span>
-            </div>
+          {/* 2. Orta Bölge: Oynatıcı Kontrolleri */}
+          <div className="flex items-center justify-center gap-4 sm:gap-6">
+            <button
+              type="button"
+              onClick={toggleShuffle}
+              title={isShuffle ? 'Karıştırma: Açık' : 'Karıştırma: Kapalı'}
+              className={`relative p-1.5 transition ${
+                isShuffle ? 'text-accent' : 'text-tertiary hover:text-primary'
+              }`}
+            >
+              <Shuffle className="h-4 w-4" />
+              {isShuffle && (
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-accent" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={prevTrack}
+              title="Önceki"
+              className="p-1.5 text-secondary hover:text-primary transition active:scale-95"
+            >
+              <SkipBack className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={togglePlay}
+              title={isPlaying ? 'Duraklat' : 'Oynat'}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-background shadow-md hover:scale-105 active:scale-95 transition-all"
+            >
+              {isPlaying ? (
+                <Pause className="h-5 w-5 fill-current" />
+              ) : (
+                <Play className="h-5 w-5 fill-current ml-0.5" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={nextTrack}
+              title="Sonraki"
+              className="p-1.5 text-secondary hover:text-primary transition active:scale-95"
+            >
+              <SkipForward className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={toggleRepeat}
+              title={
+                repeatMode === 'off'
+                  ? 'Tekrar: Kapalı'
+                  : repeatMode === 'all'
+                  ? 'Tekrar: Tüm Kuyruk'
+                  : 'Tekrar: Aynı Parça'
+              }
+              className={`relative p-1.5 transition ${
+                repeatMode !== 'off' ? 'text-accent' : 'text-tertiary hover:text-primary'
+              }`}
+            >
+              {repeatMode === 'one' ? (
+                <Repeat1 className="h-4 w-4" />
+              ) : (
+                <Repeat className="h-4 w-4" />
+              )}
+              {repeatMode !== 'off' && (
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-accent" />
+              )}
+            </button>
           </div>
 
-          {/* Sağ: Kalite Rozeti, Ses Kontrolü & Kuyruk */}
-          <div className="flex items-center justify-end gap-3 w-1/4 sm:w-1/3">
-            <div className="hidden lg:flex items-center gap-1.5 shrink-0">
-              {qualityInfo.isHiRes ? (
-                <span
-                  title="Hi-Res Kayıpsız Ses (24-bit veya 88.2+ kHz)"
-                  className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-amber-300 ring-1 ring-amber-400/40"
-                >
-                  HI-RES
-                </span>
-              ) : qualityInfo.isLossless ? (
-                <span
-                  title="Kayıpsız Ses (Lossless)"
-                  className="rounded bg-emerald-400/20 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-emerald-300 ring-1 ring-emerald-400/40"
-                >
-                  LOSSLESS
-                </span>
-              ) : null}
-              <span
-                title={`${qualityInfo.fullLabel}${qualityInfo.channelsStr ? ` • ${qualityInfo.channelsStr}` : ''}`}
-                className="rounded-md bg-slate-800/90 px-2 py-0.5 text-[10px] font-mono text-slate-300 ring-1 ring-slate-700"
-              >
-                {qualityInfo.fullLabel}
+          {/* 3. Sağ Bölge: Süre, Format, Ses, Kuyruk */}
+          <div className="flex items-center justify-end gap-3 sm:gap-4 w-1/4 sm:w-1/3">
+            {/* Süre */}
+            <span className="hidden md:inline font-mono text-xs text-tertiary tabular-nums">
+              {formatDuration(Math.floor(currentTime)) || '0:00'} /{' '}
+              {formatDuration(Math.floor(currentDuration)) || '0:00'}
+            </span>
+
+            {/* Format Etiketi + Hi-Res Vurgu Noktası */}
+            <div className="group/fmt relative hidden lg:flex items-center gap-1.5 shrink-0">
+              <span className="flex items-center gap-1 rounded bg-surface-hover px-2 py-0.5 font-mono text-[10px] text-secondary ring-1 ring-border cursor-help">
+                {quality.isHiRes && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent" title="Hi-Res Audio" />
+                )}
+                <span>{compactFormat}</span>
               </span>
+              {/* Tooltip */}
+              <div className="absolute bottom-full right-0 mb-2 hidden group-hover/fmt:block w-48 rounded-lg bg-surface p-2.5 text-[11px] text-secondary shadow-xl ring-1 ring-border z-50">
+                <p className="font-semibold text-primary">{quality.fullLabel}</p>
+                <p className="text-tertiary mt-1">{formatSize(currentTrack.file_size)}</p>
+                <p className="text-tertiary font-mono text-[10px] truncate mt-0.5" title={currentTrack.file_path}>
+                  {currentTrack.file_path}
+                </p>
+              </div>
             </div>
 
+            {/* Ses Kontrolü */}
             <div className="hidden sm:flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={toggleMute}
                 title={isMuted ? 'Sesi Aç' : 'Sessiz'}
-                className="text-slate-400 hover:text-slate-200 transition text-sm"
+                className="text-tertiary hover:text-primary transition p-1"
               >
-                {isMuted || volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
+                {isMuted || volume === 0 ? (
+                  <VolumeX className="h-4 w-4" />
+                ) : (
+                  <Volume2 className="h-4 w-4" />
+                )}
               </button>
               <input
                 type="range"
@@ -291,35 +401,23 @@ export default function AudioPlayerBar() {
                 step={0.02}
                 value={isMuted ? 0 : volume}
                 onChange={(e) => setVolume(Number(e.target.value))}
-                className="h-1.5 w-16 md:w-20 cursor-pointer appearance-none rounded-lg bg-slate-800 accent-sky-400 hover:bg-slate-700"
+                className="h-1 w-16 md:w-20 cursor-pointer appearance-none rounded-lg bg-surface-hover accent-accent hover:opacity-100 opacity-80 transition"
               />
             </div>
 
+            {/* Kuyruk Butonu */}
             <button
+              ref={queueToggleBtnRef}
               type="button"
               onClick={() => setIsQueueOpen(!isQueueOpen)}
               title="Çalma Sırası"
-              className={`relative rounded-lg p-1.5 text-sm transition ${
+              className={`rounded-lg p-2 text-xs transition ${
                 isQueueOpen
-                  ? 'bg-sky-600 text-white'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  ? 'bg-accent text-background'
+                  : 'text-tertiary hover:text-primary hover:bg-surface-hover'
               }`}
             >
-              📑
-              {queue.length > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-sky-500 text-[9px] font-bold text-white">
-                  {queue.length > 99 ? '99+' : queue.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={clearQueue}
-              title="Kapat"
-              className="text-slate-500 hover:text-slate-300 text-sm transition px-1"
-            >
-              ✕
+              <ListMusic className="h-4 w-4" />
             </button>
           </div>
         </div>

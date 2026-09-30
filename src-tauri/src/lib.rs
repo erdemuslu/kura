@@ -1,4 +1,4 @@
-//! Local Media Hub — Tauri v2 çekirdeği.
+//! Kura — Tauri v2 çekirdeği.
 //!
 //! Tauri IPC komutları (masaüstü penceresi) ve arka planda çalışan Axum
 //! sunucusu (ağ girişi) aynı ortak servis katmanını paylaşır:
@@ -6,6 +6,7 @@
 
 mod cover;
 mod db;
+mod ffmpeg;
 mod meta;
 mod runner;
 mod scanner;
@@ -297,6 +298,50 @@ async fn open_media_batch(
     }))
 }
 
+/// Bir kaynak dizini altındaki tüm medyaları indeksten siler.
+#[tauri::command]
+async fn remove_source_path(
+    path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<usize, String> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::remove_source_path(&conn, &path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Şarkı sözlerini (sidecar .lrc veya gömülü etiket) okur.
+#[tauri::command]
+async fn get_lyrics(file_path: String) -> Result<Option<scanner::LyricsResult>, String> {
+    tokio::task::spawn_blocking(move || {
+        Ok(scanner::read_lyrics(std::path::Path::new(&file_path)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Dosyayı macOS Finder'da vurgulayarak gösterir.
+#[tauri::command]
+async fn reveal_in_finder(file_path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = file_path;
+        Ok(())
+    }
+}
+
 /// Bağlı diskleri listeler.
 #[tauri::command]
 fn list_disks() -> Vec<scanner::DiskInfo> {
@@ -445,6 +490,12 @@ async fn set_player_setting(
     .map_err(|e| e.to_string())?
 }
 
+/// Gömülü veya sistem FFmpeg varlığını kontrol eder.
+#[tauri::command]
+fn is_ffmpeg_available() -> bool {
+    ffmpeg::is_available()
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Native klasör seçme diyaloğu (ScanPanel "Gözat…" butonu)
@@ -495,7 +546,11 @@ pub fn run() {
             movie_files,
             list_shows,
             list_seasons,
-            list_episodes
+            list_episodes,
+            is_ffmpeg_available,
+            remove_source_path,
+            get_lyrics,
+            reveal_in_finder
         ])
         .run(tauri::generate_context!())
         .expect("Tauri uygulaması çalıştırılamadı");

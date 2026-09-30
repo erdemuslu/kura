@@ -2,7 +2,7 @@
 //! Masaüstü penceresi ile aynı ortak servis katmanını (db / runner / scanner)
 //! kullanır. REST, aynı React `dist` klasörünü de ağ tarayıcılarına sunar.
 
-use crate::{db, runner, scanner};
+use crate::{db, ffmpeg, runner, scanner};
 use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
@@ -19,10 +19,25 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use tokio_util::io::ReaderStream;
 
+#[allow(dead_code)]
+pub struct HlsSessionEntry {
+    pub child: Option<tokio::process::Child>,
+    pub dir: PathBuf,
+    pub file_path: String,
+    pub start_seconds: Option<f64>,
+    pub created_at: std::time::Instant,
+}
+
+#[derive(Default)]
+pub struct HlsManager {
+    pub sessions: tokio::sync::Mutex<std::collections::HashMap<String, HlsSessionEntry>>,
+}
+
 #[derive(Clone)]
 pub struct ServerState {
     pub db_path: PathBuf,
     pub dist: PathBuf,
+    pub hls: std::sync::Arc<HlsManager>,
 }
 
 /// `/api/stream` — medya dosyası HTTP Range akışı sorgu parametreleri.
@@ -61,6 +76,11 @@ pub struct OpenBatchPayload {
 pub struct ScanPayload {
     pub path: String,
     pub disk_label: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct RemoveSourcePayload {
+    pub path: String,
 }
 
 #[derive(Deserialize)]
@@ -175,12 +195,17 @@ async fn check_auth(
 }
 
 pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
-    let state = ServerState { db_path, dist };
+    let state = ServerState {
+        db_path,
+        dist,
+        hls: std::sync::Arc::new(HlsManager::default()),
+    };
     let static_root = state.dist.clone();
 
     let app = Router::new()
         .route("/api/status", get(status))
         .route("/api/library", get(library))
+        .route("/api/library/remove-source", post(remove_source_route))
         .route("/api/disks", get(disks))
         .route("/api/scan", post(scan))
         .route("/api/open", post(open_media_route))
@@ -188,6 +213,8 @@ pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
         .route("/api/music/albums", get(music_albums))
         .route("/api/music/tracks", get(music_tracks))
         .route("/api/music/artist-tracks", get(music_artist_tracks))
+        .route("/api/music/lyrics", get(lyrics_route))
+        .route("/api/open-folder", post(open_folder_route))
         .route("/api/cover", get(cover))
         .route("/api/meta", get(media_meta))
         .route("/api/movies", get(movies_route))
@@ -197,6 +224,12 @@ pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
         .route("/api/series/episodes", get(series_episodes))
         .route("/api/open-batch", post(open_batch))
         .route("/api/stream", get(stream_media))
+        .route("/api/stream/video", get(stream_video_route))
+        .route("/api/hls/:session/master.m3u8", get(hls_master_route))
+        .route("/api/hls/:session/:file", get(hls_file_route))
+        .route("/api/subtitle", get(subtitle_route))
+        .route("/api/media/probe", get(media_probe_route))
+        .route("/api/ffmpeg/status", get(ffmpeg_status_route))
         .route(
             "/api/settings/player",
             get(get_player_setting_route).post(set_player_setting_route),
@@ -284,6 +317,27 @@ async fn scan(
     .map_err(internal_error)?;
 
     Ok(Json(summary))
+}
+
+async fn remove_source_route(
+    State(st): State<ServerState>,
+    headers: HeaderMap,
+    Json(payload): Json<RemoveSourcePayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiResponse>)> {
+    check_auth(&st, &headers).await?;
+    let db_path = st.db_path.clone();
+    let deleted = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path)?;
+        db::remove_source_path(&conn, &payload.path)
+    })
+    .await
+    .map_err(|e| internal_error(e.to_string()))?
+    .map_err(internal_error)?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "deleted": deleted
+    })))
 }
 
 async fn open_media_route(
@@ -389,6 +443,37 @@ async fn music_tracks(
     .map_err(|e| internal_error(e.to_string()))?
     .map_err(internal_error)?;
     Ok(Json(tracks))
+}
+
+#[derive(Deserialize)]
+pub struct LyricsQuery {
+    pub path: String,
+}
+
+async fn lyrics_route(
+    Query(q): Query<LyricsQuery>,
+) -> impl IntoResponse {
+    let lyrics = scanner::read_lyrics(Path::new(&q.path));
+    Json(lyrics)
+}
+
+#[derive(Deserialize)]
+pub struct OpenFolderPayload {
+    pub path: String,
+}
+
+async fn open_folder_route(
+    Json(p): Json<OpenFolderPayload>,
+) -> impl IntoResponse {
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open")
+        .arg("-R")
+        .arg(&p.path)
+        .spawn();
+    Json(ApiResponse {
+        success: true,
+        message: "Klasör açıldı".into(),
+    })
 }
 
 /// Albüm kapağı çözümleme zinciri:
@@ -1091,6 +1176,556 @@ async fn stream_media(
         body,
     )
         .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct VideoStreamQuery {
+    pub path: Option<String>,
+    pub id: Option<String>,
+    pub start: Option<f64>,
+}
+
+#[derive(Deserialize)]
+pub struct SubtitleQuery {
+    pub path: Option<String>,
+    pub video_path: Option<String>,
+    pub track: Option<usize>,
+}
+
+/// `/api/ffmpeg/status` — Gömülü veya sistem FFmpeg durumu
+async fn ffmpeg_status_route() -> Json<serde_json::Value> {
+    let available = ffmpeg::is_available();
+    let path = ffmpeg::find_ffmpeg().map(|p| p.to_string_lossy().to_string());
+    Json(serde_json::json!({
+        "available": available,
+        "path": path,
+    }))
+}
+
+fn path_session_id(p: &str, start: Option<f64>) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    p.hash(&mut hasher);
+    let start_sec = start.map(|s| s as u64).unwrap_or(0);
+    format!("vid_{:016x}_{}", hasher.finish(), start_sec)
+}
+
+fn url_encode(input: &str) -> String {
+    let mut encoded = String::new();
+    for byte in input.bytes() {
+        match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    encoded
+}
+
+/// `/api/stream/video` — Gömülü video oynatıcı akışı.
+/// Native formatlar (mp4/webm/mov) doğrudan HTTP Range ile sunulur.
+/// MKV/AVI gibi formatlar Safari / WebKit uyumlu HLS (.m3u8) akışına yönlendirilir.
+async fn stream_video_route(
+    Query(q): Query<VideoStreamQuery>,
+    headers: HeaderMap,
+    State(st): State<ServerState>,
+) -> Response {
+    let db_path = st.db_path.clone();
+    let q_path = q.path.clone();
+    let q_id = q.id.clone();
+
+    // 1) Dosya yolunu belirle ve veritabanı indeksinde var olduğunu doğrula
+    let resolved_path = tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
+        let conn = db::open(&db_path)?;
+        if let Some(ref p) = q_path {
+            if db::path_exists(&conn, p)? {
+                return Ok(Some(p.clone()));
+            }
+        }
+        if let Some(ref id) = q_id {
+            let found = conn
+                .query_row(
+                    "SELECT file_path FROM media_items WHERE id = ?1",
+                    rusqlite::params![id],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok();
+            if let Some(ref p) = found {
+                if db::path_exists(&conn, p)? {
+                    return Ok(Some(p.clone()));
+                }
+            }
+        }
+        Ok(None)
+    })
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .flatten();
+
+    let Some(file_path) = resolved_path else {
+        return (
+            StatusCode::NOT_FOUND,
+            "Video dosyası bulunamadı veya indekste kayıtlı değil",
+        )
+            .into_response();
+    };
+
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return (
+            StatusCode::NOT_FOUND,
+            "Dosya diskte bulunamadı. Disk çevrimdışı olabilir.",
+        )
+            .into_response();
+    }
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let is_native = matches!(ext.as_str(), "mp4" | "m4v" | "mov" | "webm");
+
+    // Native format (mp4 vb.) ve başlangıç noktası istenmemişse doğrudan HTTP Range akışı kullan
+    if is_native && q.start.is_none() {
+        return stream_media(
+            Query(StreamQuery {
+                path: Some(file_path),
+                id: None,
+            }),
+            headers,
+            State(st),
+        )
+        .await;
+    }
+
+    // MKV veya FFmpeg gereken formatlar: HLS master playlist'e yönlendir (307 Temporary Redirect)
+    let session = path_session_id(&file_path, q.start);
+    let mut hls_target = format!("/api/hls/{session}/master.m3u8?path={}", url_encode(&file_path));
+    if let Some(ss) = q.start {
+        if ss > 0.05 {
+            hls_target.push_str(&format!("&start={:.3}", ss));
+        }
+    }
+
+    (
+        StatusCode::TEMPORARY_REDIRECT,
+        [(header::LOCATION, hls_target)],
+    )
+        .into_response()
+}
+
+/// `/api/hls/:session/master.m3u8` — HLS oynatma listesi
+async fn hls_master_route(
+    axum::extract::Path(session): axum::extract::Path<String>,
+    Query(q): Query<VideoStreamQuery>,
+    State(st): State<ServerState>,
+) -> Response {
+    let db_path = st.db_path.clone();
+    let q_path = q.path.clone();
+    let q_id = q.id.clone();
+
+    // 1) Dosya yolunu belirle
+    let resolved_path = tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
+        let conn = db::open(&db_path)?;
+        if let Some(ref p) = q_path {
+            if db::path_exists(&conn, p)? {
+                return Ok(Some(p.clone()));
+            }
+        }
+        if let Some(ref id) = q_id {
+            let found = conn
+                .query_row(
+                    "SELECT file_path FROM media_items WHERE id = ?1",
+                    rusqlite::params![id],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok();
+            if let Some(ref p) = found {
+                if db::path_exists(&conn, p)? {
+                    return Ok(Some(p.clone()));
+                }
+            }
+        }
+        Ok(None)
+    })
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .flatten();
+
+    let Some(file_path) = resolved_path else {
+        return (
+            StatusCode::NOT_FOUND,
+            "Video dosyası bulunamadı veya indekste kayıtlı değil",
+        )
+            .into_response();
+    };
+
+    let Some(ffmpeg_bin) = ffmpeg::find_ffmpeg() else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "FFmpeg ikili dosyası bulunamadı",
+        )
+            .into_response();
+    };
+
+    let session_dir = std::env::temp_dir().join("kura-hls").join(&session);
+    let master_file = session_dir.join("master.m3u8");
+
+    // Session kontrolü ve FFmpeg başlatma
+    {
+        let mut map = st.hls.sessions.lock().await;
+
+        let needs_start = match map.get_mut(&session) {
+            Some(existing) => {
+                if existing.file_path != file_path || existing.start_seconds != q.start || !master_file.exists() {
+                    if let Some(mut old_child) = existing.child.take() {
+                        let _ = old_child.kill().await;
+                    }
+                    let _ = tokio::fs::remove_dir_all(&session_dir).await;
+                    true
+                } else {
+                    false
+                }
+            }
+            None => true,
+        };
+
+        if needs_start {
+            // Aynı dosyaya ait önceki oturumları durdur ve geçici klasörlerini temizle
+            let mut to_cleanup = Vec::new();
+            for (s_id, entry) in map.iter_mut() {
+                if entry.file_path == file_path && s_id != &session {
+                    if let Some(mut old_child) = entry.child.take() {
+                        let _ = old_child.kill().await;
+                    }
+                    to_cleanup.push(entry.dir.clone());
+                }
+            }
+            for old_dir in to_cleanup {
+                tokio::spawn(async move {
+                    let _ = tokio::fs::remove_dir_all(&old_dir).await;
+                });
+            }
+
+            let _ = tokio::fs::create_dir_all(&session_dir).await;
+            let mut cmd = ffmpeg::create_hls_cmd(&ffmpeg_bin, &file_path, &session_dir, q.start);
+            match cmd.spawn() {
+                Ok(child) => {
+                    map.insert(
+                        session.clone(),
+                        HlsSessionEntry {
+                            child: Some(child),
+                            dir: session_dir.clone(),
+                            file_path: file_path.clone(),
+                            start_seconds: q.start,
+                            created_at: std::time::Instant::now(),
+                        },
+                    );
+                }
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("FFmpeg başlatılamadı: {e}"),
+                    )
+                        .into_response();
+                }
+            }
+        }
+    }
+
+    // master.m3u8 dosyasının oluşmasını bekle (azami 3 saniye, her 50ms)
+    for _ in 0..60 {
+        if master_file.exists() {
+            if let Ok(meta) = tokio::fs::metadata(&master_file).await {
+                if meta.len() > 10 {
+                    break;
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    if !master_file.exists() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "HLS playlist üretilemedi (zaman aşımı)",
+        )
+            .into_response();
+    }
+
+    match tokio::fs::read(&master_file).await {
+        Ok(bytes) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, "application/vnd.apple.mpegurl".to_string()),
+                (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".to_string()),
+                (header::CACHE_CONTROL, "no-cache, no-store, must-revalidate".to_string()),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Playlist okunamadı: {e}"),
+        )
+            .into_response(),
+    }
+}
+
+/// `/api/hls/:session/:file` — HLS parçacıklarını (.ts, .m3u8) sunar
+async fn hls_file_route(
+    axum::extract::Path((session, file)): axum::extract::Path<(String, String)>,
+    State(_st): State<ServerState>,
+) -> Response {
+    if file.contains("..") || file.contains('/') || file.contains('\\') {
+        return (StatusCode::BAD_REQUEST, "Geçersiz dosya adı").into_response();
+    }
+
+    let session_dir = std::env::temp_dir().join("kura-hls").join(&session);
+    let target = session_dir.join(&file);
+
+    // .ts dosyaları için dosyanın diske yazılmasını bekle (azami 4 saniye)
+    for _ in 0..40 {
+        if target.exists() {
+            if let Ok(meta) = tokio::fs::metadata(&target).await {
+                if meta.len() > 0 {
+                    break;
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    if !target.exists() {
+        return (StatusCode::NOT_FOUND, "Segment bulunamadı").into_response();
+    }
+
+    let is_ts = file.ends_with(".ts");
+    let content_type = if is_ts {
+        "video/MP2T"
+    } else if file.ends_with(".m3u8") {
+        "application/vnd.apple.mpegurl"
+    } else {
+        "application/octet-stream"
+    };
+
+    let cache_control = if is_ts {
+        "public, max-age=3600"
+    } else {
+        "no-cache, no-store, must-revalidate"
+    };
+
+    match tokio::fs::read(&target).await {
+        Ok(bytes) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, content_type.to_string()),
+                (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".to_string()),
+                (header::CACHE_CONTROL, cache_control.to_string()),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Segment okunamadı: {e}"),
+        )
+            .into_response(),
+    }
+}
+
+/// Altyazı dosyasını okuyup UTF-8 veya Windows-1254 (CP1254) olarak çözümleyip WebVTT'ye dönüştürür.
+async fn read_sub_to_vtt(p: &Path) -> Option<String> {
+    let bytes = tokio::fs::read(p).await.ok()?;
+    let text = match String::from_utf8(bytes.clone()) {
+        Ok(s) => s,
+        Err(_) => ffmpeg::decode_windows1254(&bytes),
+    };
+    let is_vtt = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+        == Some("vtt");
+    if is_vtt {
+        Some(text)
+    } else {
+        Some(ffmpeg::srt_to_vtt(&text))
+    }
+}
+
+/// `/api/subtitle` — SRT altyazılarını anında WebVTT'ye çevirir veya MKV dahili altyazısını çıkarır.
+async fn subtitle_route(
+    Query(q): Query<SubtitleQuery>,
+    State(st): State<ServerState>,
+) -> Response {
+    let sub_headers = [
+        (header::CONTENT_TYPE, "text/vtt; charset=utf-8".to_string()),
+        (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".to_string()),
+        (header::CACHE_CONTROL, "public, max-age=3600".to_string()),
+    ];
+
+    // 1. Doğrudan altyazı dosyası yolu verilmişse
+    if let Some(ref sub_path) = q.path {
+        let p = Path::new(sub_path);
+        if p.exists() {
+            if let Some(vtt) = read_sub_to_vtt(p).await {
+                return (StatusCode::OK, sub_headers, vtt).into_response();
+            }
+        }
+    }
+
+    // 2. Video yolu verilmişse DB'den eşleşen altyazıyı kontrol et
+    if let Some(ref vp) = q.video_path {
+        let db_path = st.db_path.clone();
+        let video_p = vp.clone();
+        let found_sub = tokio::task::spawn_blocking(move || {
+            let conn = db::open(&db_path).ok()?;
+            db::subtitle_for_path(&conn, &video_p).ok().flatten()
+        })
+        .await
+        .ok()
+        .flatten();
+
+        if let Some(sub_file) = found_sub {
+            let p = Path::new(&sub_file);
+            if p.exists() {
+                if let Some(vtt) = read_sub_to_vtt(p).await {
+                    return (StatusCode::OK, sub_headers, vtt).into_response();
+                }
+            }
+        }
+
+        // 3. DB'de altyazı yoksa bile video dosyasının hemen yanındaki .srt / .vtt dosyalarını ara
+        let video_path_obj = Path::new(vp);
+        let srt_candidate = video_path_obj.with_extension("srt");
+        if srt_candidate.exists() {
+            if let Some(vtt) = read_sub_to_vtt(&srt_candidate).await {
+                return (StatusCode::OK, sub_headers, vtt).into_response();
+            }
+        }
+        let vtt_candidate = video_path_obj.with_extension("vtt");
+        if vtt_candidate.exists() {
+            if let Some(vtt) = read_sub_to_vtt(&vtt_candidate).await {
+                return (StatusCode::OK, sub_headers, vtt).into_response();
+            }
+        }
+        // Klasördeki diğer olası altyazı dosyaları (.tr.srt, Turkish.srt vb.)
+        if let Some(parent) = video_path_obj.parent() {
+            if let Ok(mut entries) = tokio::fs::read_dir(parent).await {
+                while let Ok(Some(entry)) = entries.next_entry().await {
+                    let ep = entry.path();
+                    let name = ep.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+                    if name.ends_with(".srt") || name.ends_with(".vtt") {
+                        if let Some(vtt) = read_sub_to_vtt(&ep).await {
+                            return (StatusCode::OK, sub_headers, vtt).into_response();
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Harici altyazı yoksa dahili altyazı parçasını (track) FFmpeg ile çıkar
+        if let Some(ffmpeg_bin) = ffmpeg::find_ffmpeg() {
+            let track_idx = q.track.unwrap_or(0);
+            let mut cmd = ffmpeg::create_subtitle_cmd(&ffmpeg_bin, vp, track_idx);
+            if let Ok(output) = cmd.output().await {
+                if output.status.success() {
+                    let vtt = String::from_utf8_lossy(&output.stdout).to_string();
+                    if !vtt.trim().is_empty() {
+                        return (StatusCode::OK, sub_headers, vtt).into_response();
+                    }
+                }
+            }
+        }
+    }
+
+    (StatusCode::NOT_FOUND, "Altyazı bulunamadı").into_response()
+}
+
+#[derive(Deserialize)]
+pub struct MediaProbeQuery {
+    pub path: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct MediaProbeResponse {
+    pub success: bool,
+    pub duration: Option<f64>,
+}
+
+/// `/api/media/probe` — Video/medya dosyasının süresini hızlıca tespit eder (<50ms).
+/// Önce veritabanında arar, yoksa FFmpeg ile header'dan süreyi okuyup DB'ye yazar.
+async fn media_probe_route(
+    Query(q): Query<MediaProbeQuery>,
+    State(st): State<ServerState>,
+) -> Json<MediaProbeResponse> {
+    let Some(file_path) = q.path else {
+        return Json(MediaProbeResponse {
+            success: false,
+            duration: None,
+        });
+    };
+
+    let db_path = st.db_path.clone();
+    let fp_check = file_path.clone();
+
+    // 1. Önce DB'de kayıtlı süresi var mı kontrol et
+    let cached_dur = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path).ok()?;
+        conn.query_row(
+            "SELECT duration FROM media_items WHERE file_path = ?1 AND duration IS NOT NULL AND duration > 0",
+            rusqlite::params![fp_check],
+            |row| row.get::<_, f64>(0),
+        )
+        .ok()
+    })
+    .await
+    .ok()
+    .flatten();
+
+    if let Some(dur) = cached_dur {
+        return Json(MediaProbeResponse {
+            success: true,
+            duration: Some(dur),
+        });
+    }
+
+    // 2. FFmpeg ile anında tespit et (<50ms)
+    if let Some(ffmpeg_bin) = ffmpeg::find_ffmpeg() {
+        if let Some(dur) = ffmpeg::probe_duration(&ffmpeg_bin, &file_path).await {
+            let db_path2 = st.db_path.clone();
+            let fp2 = file_path.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                if let Ok(conn) = db::open(&db_path2) {
+                    let dur_int = dur.round() as i64;
+                    let _ = conn.execute(
+                        "UPDATE media_items SET duration = ?1 WHERE file_path = ?2",
+                        rusqlite::params![dur_int, fp2],
+                    );
+                }
+            })
+            .await;
+
+            return Json(MediaProbeResponse {
+                success: true,
+                duration: Some(dur),
+            });
+        }
+    }
+
+    Json(MediaProbeResponse {
+        success: false,
+        duration: None,
+    })
 }
 
 #[cfg(test)]

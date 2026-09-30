@@ -1,18 +1,8 @@
-/**
- * Hiyerarşik müzik tarayıcı:
- *   Müzik › (Albümler | Sanatçılar) › Sanatçı › Albüm › Şarkı listesi
- *
- * - Albüm kartına tıklayınca içindeki şarkılar (tek tek çalanabilir)
- * - Sanatçı kartuna tıklayınca albümleri
- * - Her kartta "⋯" menüsü → "Tümünü Çal": kartın tüm şarkılarını
- *   .m3u8 playlist olarak seçili oynatıcıya ekler
- * - Hem masaüstünde (IPC) hem tarayıcıda (REST) çalışır
- */
 import { useState } from 'react';
+import { Plus, SlidersHorizontal } from 'lucide-react';
 import {
   coverUrl,
   getAlbumTracks,
-  getArtistTracks,
   launchPlayer,
   launchPlayerBatch,
   type AlbumSummary,
@@ -22,97 +12,36 @@ import {
 import { useAudioPlayer } from '../context/AudioPlayerContext';
 import { useAlbums, useAlbumTracks, useArtists } from '../hooks/useMedia';
 import { formatDuration, formatQuality } from '../lib/format';
+import MediaCard from './MediaCard';
 
 type Level =
   | { kind: 'top'; view: 'albums' | 'artists' }
   | { kind: 'artist'; artist: string }
   | { kind: 'album'; album: string; artist: string };
 
-interface MusicCardProps {
-  title: string;
-  subtitle: string;
-  meta: string;
-  cover: string | null;
-  onClick: () => void;
-  onPlayAll: () => void;
-  playAllLoading: boolean;
-}
-
-/** Albüm/sanatçı kartı — kapak imajı + köşede "⋯" menüsü ("Tümünü Çal").
- *  Kapak yüklenemezse (404) onError ile gizlenir, gradient placeholder kalır. */
-function MusicCard({
-  title,
-  subtitle,
-  meta,
-  cover,
-  onClick,
-  onPlayAll,
-  playAllLoading,
-}: MusicCardProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  return (
-    <div className="group overflow-hidden rounded-xl bg-slate-800/60 ring-1 ring-slate-700 transition hover:ring-sky-400">
-      <div
-        className="relative flex aspect-square cursor-pointer items-center justify-center bg-gradient-to-br from-emerald-600/40 to-teal-900/60"
-        onClick={onClick}
-      >
-        <span className="select-none text-4xl font-bold text-white/15 group-hover:text-white/25">
-          {title.trim().slice(0, 1).toUpperCase() || '?'}
-        </span>
-        {cover && (
-          <img
-            src={cover}
-            alt={title}
-            loading="lazy"
-            className="absolute inset-0 h-full w-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
-          />
-        )}
-        <div className="absolute right-2 top-2" onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            onClick={() => setMenuOpen(!menuOpen)}
-            title="Menü"
-            className="rounded-lg bg-slate-900/70 px-2 py-0.5 text-sm text-slate-300 opacity-0 ring-1 ring-slate-600 transition group-hover:opacity-100 focus:opacity-100"
-          >
-            ⋯
-          </button>
-          {menuOpen && (
-            <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg bg-slate-800 py-1 shadow-xl ring-1 ring-slate-600">
-              <button
-                type="button"
-                disabled={playAllLoading}
-                onClick={() => {
-                  setMenuOpen(false);
-                  onPlayAll();
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {playAllLoading ? '⏳ Ekleniyor…' : '▶ Tümünü Çal'}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="cursor-pointer p-3" onClick={onClick}>
-        <p className="truncate text-sm font-medium text-slate-100">{title}</p>
-        <p className="truncate text-xs text-slate-400">{subtitle}</p>
-        <p className="mt-1 truncate text-[11px] text-slate-500">{meta}</p>
-      </div>
-    </div>
-  );
-}
-
 interface MusicViewProps {
   player: string;
   query: string;
   playingPath: string | null;
   onPlayed: (path: string | null) => void;
+  onOpenScanModal?: () => void;
+  hasSources?: boolean;
+  onManageSources?: () => void;
+  categoryLabel?: string;
+  categoryPaths?: string[];
 }
 
-export default function MusicView({ player, query, playingPath, onPlayed }: MusicViewProps) {
+export default function MusicView({
+  player,
+  query,
+  playingPath,
+  onPlayed,
+  onOpenScanModal,
+  hasSources,
+  onManageSources,
+  categoryLabel,
+  categoryPaths,
+}: MusicViewProps) {
   const [level, setLevel] = useState<Level>({ kind: 'top', view: 'albums' });
   const [batchLabel, setBatchLabel] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
@@ -121,8 +50,27 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
 
   const showAlbums = level.kind !== 'top' || level.view === 'albums';
   const artists = useArtists(query);
-  // Sanatçı seviyesindeysek o sanatçının albümleri, yoksa tüm albümler
   const albums = useAlbums(query, level.kind === 'artist' ? level.artist : undefined);
+
+  const rawAlbums = albums.data ?? [];
+  const displayedAlbums =
+    categoryPaths && categoryPaths.length > 0
+      ? rawAlbums.filter((a) =>
+          categoryPaths.some(
+            (p) => !a.folder_path || a.folder_path.startsWith(p) || p.startsWith(a.folder_path),
+          ),
+        )
+      : rawAlbums;
+
+  const rawArtists = artists.data ?? [];
+  const displayedArtists =
+    categoryPaths && categoryPaths.length > 0
+      ? rawArtists.filter((a) =>
+          categoryPaths.some(
+            (p) => !a.folder_path || a.folder_path.startsWith(p) || p.startsWith(a.folder_path),
+          ),
+        )
+      : rawArtists;
   const tracks = useAlbumTracks(
     level.kind === 'album' ? level.album : '',
     level.kind === 'album' ? level.artist : '',
@@ -133,29 +81,23 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
     onPlayed(item.file_path);
     if (player === 'in_app') {
       playTrack(item, tracks.data ?? [item]);
-      setFeedback({ success: true, message: `Çalınıyor: ${item.title}` });
       return;
     }
     setFeedback(await launchPlayer({ filePath: item.file_path, targetApp: player }));
   };
 
-  /** Kartın tüm şarkılarını playlist olarak oynatıcıya ekler. */
   const playAll = async (label: string, fetchTracks: () => Promise<MediaItem[]>) => {
     setBatchLabel(label);
     setFeedback(null);
     try {
       const list = await fetchTracks();
       if (list.length === 0) {
-        setFeedback({ success: false, message: `"${label}" için çalınacak şarkı bulunamadı` });
+        setFeedback({ success: false, message: `"${label}" için çalınacak parça bulunamadı` });
         return;
       }
       if (player === 'in_app') {
         playQueue(list, 0);
         onPlayed(list[0]?.file_path ?? null);
-        setFeedback({
-          success: true,
-          message: `"${label}" çalma sırasına eklendi (${list.length} parça)`,
-        });
         return;
       }
       const result = await launchPlayerBatch(
@@ -173,229 +115,320 @@ export default function MusicView({ player, query, playingPath, onPlayed }: Musi
   };
 
   return (
-    <div className="space-y-4">
-      {/* Breadcrumb + görünüm değiştirici */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <nav className="flex flex-wrap items-center gap-1.5 text-sm">
-          <button
-            type="button"
-            onClick={() => setLevel({ kind: 'top', view: 'albums' })}
-            className="text-slate-400 hover:text-slate-200"
-          >
-            Müzik
-          </button>
-          {level.kind === 'artist' && (
-            <>
-              <span className="text-slate-600">›</span>
-              <span className="font-medium text-slate-100">{level.artist}</span>
-            </>
-          )}
-          {level.kind === 'album' && (
-            <>
-              <span className="text-slate-600">›</span>
-              <button
-                type="button"
-                onClick={() => setLevel({ kind: 'artist', artist: level.artist })}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                {level.artist}
-              </button>
-              <span className="text-slate-600">›</span>
-              <span className="font-medium text-slate-100">{level.album}</span>
-            </>
-          )}
-        </nav>
-        {level.kind === 'top' && (
-          <div className="flex w-fit gap-1 rounded-lg bg-slate-800/60 p-1">
-            {(['albums', 'artists'] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setLevel({ kind: 'top', view: v })}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                  level.view === v
-                    ? 'bg-slate-700 text-white'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {v === 'albums' ? 'Albümler' : 'Sanatçılar'}
-              </button>
-            ))}
+    <div className="space-y-6">
+      {/* Üst Navigasyon & Araçlar */}
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border/40 pb-4 min-h-[72px]">
+        {level.kind === 'top' ? (
+          <div>
+            <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-primary">
+              {categoryLabel || 'Müzik'}
+            </h1>
+            <p className="mt-1 text-xs text-tertiary font-mono">
+              {displayedAlbums.length} albüm · {displayedArtists.length} sanatçı
+            </p>
           </div>
+        ) : (
+          <nav className="flex items-center gap-2 text-xs text-tertiary">
+            <button
+              type="button"
+              onClick={() =>
+                setLevel({
+                  kind: 'top',
+                  view: level.kind === 'artist' ? 'artists' : 'albums',
+                })
+              }
+              className="hover:text-primary transition"
+            >
+              {categoryLabel || 'Müzik'}
+            </button>
+            {level.kind === 'artist' && (
+              <>
+                <span>›</span>
+                <span className="font-medium text-primary">{level.artist}</span>
+              </>
+            )}
+            {level.kind === 'album' && (
+              <>
+                <span>›</span>
+                <button
+                  type="button"
+                  onClick={() => setLevel({ kind: 'artist', artist: level.artist })}
+                  className="hover:text-primary transition"
+                >
+                  {level.artist}
+                </button>
+                <span>›</span>
+                <span className="font-medium text-primary">{level.album}</span>
+              </>
+            )}
+          </nav>
         )}
+
+        <div className="flex items-center gap-3 h-8">
+          {level.kind === 'top' && (
+            <div className="flex rounded-lg bg-surface p-1 ring-1 ring-border">
+              {(['albums', 'artists'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setLevel({ kind: 'top', view: v })}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition ${
+                    level.view === v
+                      ? 'bg-surface-hover text-primary shadow-sm'
+                      : 'text-tertiary hover:text-secondary'
+                  }`}
+                >
+                  {v === 'albums' ? 'Albümler' : 'Sanatçılar'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {level.kind === 'top' &&
+            (hasSources ? (
+              <button
+                type="button"
+                onClick={onManageSources}
+                className="flex items-center gap-1.5 rounded-lg bg-surface-hover px-3 py-1.5 text-xs font-medium text-secondary hover:text-primary ring-1 ring-border transition"
+                title="Bağlı klasörleri yönet veya kaldır"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5 text-accent" />
+                <span>Kaynakları Düzenle</span>
+              </button>
+            ) : (
+              onOpenScanModal && (
+                <button
+                  type="button"
+                  onClick={onOpenScanModal}
+                  className="flex items-center gap-1.5 rounded-lg bg-surface-hover px-3 py-1.5 text-xs font-medium text-secondary hover:text-primary ring-1 ring-border transition"
+                >
+                  <Plus className="h-3.5 w-3.5 text-accent" />
+                  <span>Kaynak ekle</span>
+                </button>
+              )
+            ))}
+        </div>
       </div>
 
       {feedback && (
-        <p className={`text-sm ${feedback.success ? 'text-emerald-300' : 'text-red-400'}`}>
+        <p className={`text-xs ${feedback.success ? 'text-accent' : 'text-status-offline'}`}>
           {feedback.message}
         </p>
       )}
 
-      {/* Albüm ızgarası (üst seviye "Albümler" veya sanatçı seviyesi).
-          Kapaklar koşulsuz istenir: sunucu DB → gömülü/klasör → iTunes
-          zinciriyle çözer; 404'de placeholder kalır. lazy sayesinde
-          yalnızca görünen kartlar istek atar. */}
+      {/* Albüm Izgarası */}
       {showAlbums && level.kind !== 'album' &&
         (albums.isLoading ? (
-          <p className="py-16 text-center text-slate-400">Yükleniyor…</p>
-        ) : (albums.data ?? []).length === 0 ? (
-          <p className="py-16 text-center text-slate-400">
-            Kayıtlı albüm yok. Dizin tarayıcı ile bir müzik klasörü ekleyin.
-          </p>
+          <div className="py-24 text-center text-xs text-tertiary font-serif">
+            Kütüphane taranıyor…
+          </div>
+        ) : displayedAlbums.length === 0 ? (
+          <div className="py-24 text-center space-y-3">
+            <p className="font-serif text-2xl text-secondary font-normal">Kayıtlı albüm bulunamadı</p>
+            <p className="text-xs text-tertiary max-w-sm mx-auto">
+              {hasSources
+                ? 'Bu menüye bağlı klasörlerde müzik formatında dosya bulunamadı.'
+                : 'Dizin tarayıcı ile müzik klasörünüzü ekleyerek çalmaya başlayabilirsiniz.'}
+            </p>
+            {hasSources ? (
+              <button
+                type="button"
+                onClick={onManageSources}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-background hover:bg-accent-hover transition"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                <span>Kaynakları Düzenle</span>
+              </button>
+            ) : (
+              onOpenScanModal && (
+                <button
+                  type="button"
+                  onClick={onOpenScanModal}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-background hover:bg-accent-hover transition"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>İlk Kaynağınızı Ekleyin</span>
+                </button>
+              )
+            )}
+          </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-            {(albums.data ?? []).map((a: AlbumSummary) => {
+          <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+            {displayedAlbums.map((a: AlbumSummary) => {
               const label = `${a.artist} — ${a.album}`;
+              const isCurrentAlbum =
+                player === 'in_app' &&
+                currentTrack?.album === a.album &&
+                currentTrack?.artist === a.artist;
+
               return (
-                <MusicCard
+                <MediaCard
                   key={label}
                   title={a.album}
                   subtitle={a.artist}
                   meta={`${a.track_count} şarkı${
-                    a.total_duration ? ` • ${formatDuration(a.total_duration)}` : ''
+                    a.total_duration ? ` · ${formatDuration(a.total_duration)}` : ''
                   }`}
-                  cover={coverUrl(a.album, a.artist)}
+                  coverUrl={coverUrl(a.album, a.artist)}
+                  aspect="1:1"
+                  isPlaying={isCurrentAlbum}
                   onClick={() => setLevel({ kind: 'album', album: a.album, artist: a.artist })}
-                  onPlayAll={() => playAll(label, () => getAlbumTracks(a.album, a.artist))}
-                  playAllLoading={batchLabel === label}
+                  onPlayHover={() =>
+                    playAll(label, () => getAlbumTracks(a.album, a.artist))
+                  }
+                  playHoverLoading={batchLabel === label}
                 />
               );
             })}
           </div>
         ))}
 
-      {/* Sanatçı ızgarası (yalnızca üst seviye "Sanatçılar" görünümü) */}
+      {/* Sanatçı Izgarası */}
       {level.kind === 'top' && level.view === 'artists' &&
         (artists.isLoading ? (
-          <p className="py-16 text-center text-slate-400">Yükleniyor…</p>
-        ) : (artists.data ?? []).length === 0 ? (
-          <p className="py-16 text-center text-slate-400">
-            Kayıtlı sanatçı yok. Dizin tarayıcı ile bir müzik klasörü ekleyin.
-          </p>
+          <div className="py-24 text-center text-xs text-tertiary font-serif">
+            Yükleniyor…
+          </div>
+        ) : displayedArtists.length === 0 ? (
+          <p className="py-24 text-center text-xs text-tertiary">Kayıtlı sanatçı yok.</p>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-            {(artists.data ?? []).map((a: ArtistSummary) => (
-              <MusicCard
+          <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+            {displayedArtists.map((a: ArtistSummary) => (
+              <MediaCard
                 key={a.artist}
                 title={a.artist}
                 subtitle={`${a.album_count} albüm`}
-                meta={`${a.track_count} şarkı`}
-                cover={null}
+                meta={`${a.track_count} parça`}
+                aspect="1:1"
                 onClick={() => setLevel({ kind: 'artist', artist: a.artist })}
-                onPlayAll={() => playAll(a.artist, () => getArtistTracks(a.artist))}
-                playAllLoading={batchLabel === a.artist}
               />
             ))}
           </div>
         ))}
 
-      {/* Şarkı listesi (albüm seviyesi) */}
+      {/* Albüm Detayı & Parça Listesi */}
       {level.kind === 'album' && (
-        <section className="overflow-hidden rounded-xl ring-1 ring-slate-700">
-          <header className="flex flex-col gap-4 bg-slate-800/60 p-4 sm:flex-row">
-            {/* Büyük albüm kapağı — yüklenemezse gradient placeholder kalır */}
-            <div className="relative h-36 w-36 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-emerald-600/40 to-teal-900/60 ring-1 ring-slate-700">
-              <span className="absolute inset-0 flex items-center justify-center text-3xl font-bold text-white/15">
-                {level.album.trim().slice(0, 1).toUpperCase() || '?'}
-              </span>
+        <section className="space-y-6">
+          <header className="flex flex-col gap-6 rounded-xl bg-surface p-6 ring-1 ring-border sm:flex-row">
+            <div className="relative aspect-square w-40 shrink-0 self-center overflow-hidden rounded-lg bg-surface-hover shadow-xl sm:self-start">
               <img
                 src={coverUrl(level.album, level.artist)}
                 alt={level.album}
-                className="absolute inset-0 h-full w-full object-cover"
+                className="h-full w-full object-cover"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
                 }}
               />
-            </div>
-            <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="truncate text-base font-semibold text-slate-100">
-                  {level.album}
-                </p>
-                <p className="truncate text-sm text-slate-400">{level.artist}</p>
-                <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-xs text-slate-400">
-                  {(() => {
-                    const first = tracks.data?.[0];
-                    const total = (tracks.data ?? []).reduce(
-                      (sum, t) => sum + (t.duration ?? 0),
-                      0,
-                    );
-                    const parts = [
-                      first?.year ? String(first.year) : null,
-                      first?.genre ?? null,
-                      tracks.data ? `${tracks.data.length} şarkı` : null,
-                      total > 0 ? formatDuration(total) : null,
-                    ].filter(Boolean);
-                    return parts.length > 0 ? <span>{parts.join(' • ')}</span> : null;
-                  })()}
-                </div>
+              <div className="absolute inset-0 -z-10 flex items-center justify-center font-serif text-4xl text-tertiary">
+                {level.album.slice(0, 1)}
               </div>
-              <button
-                type="button"
-                onClick={() =>
-                  playAll(`${level.artist} — ${level.album}`, () =>
-                    Promise.resolve(tracks.data ?? []),
-                  )
-                }
-                disabled={batchLabel !== null || !tracks.data || tracks.data.length === 0}
-                className="shrink-0 self-end rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {batchLabel ? 'Ekleniyor…' : '▶ Tümünü Çal'}
-              </button>
+            </div>
+
+            <div className="min-w-0 flex-1 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h1 className="font-serif text-3xl font-normal text-primary tracking-tight">
+                    {level.album}
+                  </h1>
+                  <p className="text-base text-secondary mt-0.5">{level.artist}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    playAll(`${level.artist} — ${level.album}`, () =>
+                      Promise.resolve(tracks.data ?? []),
+                    )
+                  }
+                  disabled={batchLabel !== null || !tracks.data || tracks.data.length === 0}
+                  className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-background transition hover:bg-accent-hover disabled:opacity-50"
+                >
+                  {batchLabel ? 'Ekleniyor…' : '▶ Tümünü Çal'}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 text-xs text-tertiary pt-1">
+                {(() => {
+                  const first = tracks.data?.[0];
+                  const total = (tracks.data ?? []).reduce(
+                    (sum, t) => sum + (t.duration ?? 0),
+                    0,
+                  );
+                  const parts = [
+                    first?.year ? String(first.year) : null,
+                    first?.genre ?? null,
+                    tracks.data ? `${tracks.data.length} şarkı` : null,
+                    total > 0 ? formatDuration(total) : null,
+                  ].filter(Boolean);
+                  return parts.length > 0 ? <span>{parts.join(' • ')}</span> : null;
+                })()}
+              </div>
             </div>
           </header>
-          {tracks.isLoading ? (
-            <p className="px-4 py-6 text-sm text-slate-400">Yüklenıyor…</p>
-          ) : (
-            <div className="divide-y divide-slate-800">
-              {tracks.data?.map((t, i) => {
-                const isCurrentInApp = player === 'in_app' && currentTrack?.file_path === t.file_path;
-                const isPlayingRow = isCurrentInApp || playingPath === t.file_path;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => playSingle(t)}
-                    title={t.file_path}
-                    className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition hover:bg-slate-800/60 ${
-                      isPlayingRow ? 'bg-sky-500/15' : ''
-                    }`}
-                  >
-                    <span className="w-8 shrink-0 text-right font-mono text-xs text-slate-500">
-                      {isCurrentInApp ? (
-                        <span className="text-sky-400 font-bold">{isPlaying ? '▶' : '⏸'}</span>
-                      ) : (
-                        t.track_number ?? i + 1
-                      )}
-                    </span>
-                    <span
-                      className={`min-w-0 flex-1 truncate ${
-                        isCurrentInApp ? 'font-semibold text-sky-200' : 'text-slate-100'
+
+          {/* Parça Tablosu */}
+          <div className="overflow-hidden rounded-xl bg-surface ring-1 ring-border">
+            {tracks.isLoading ? (
+              <p className="px-4 py-6 text-xs text-tertiary">Yükleniyor…</p>
+            ) : (
+              <div className="divide-y divide-border/40">
+                {tracks.data?.map((t, i) => {
+                  const isCurrentInApp =
+                    player === 'in_app' && currentTrack?.file_path === t.file_path;
+                  const isPlayingRow = isCurrentInApp || playingPath === t.file_path;
+                  const q = formatQuality(t);
+
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => playSingle(t)}
+                      title={t.file_path}
+                      className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-xs transition hover:bg-surface-hover ${
+                        isPlayingRow ? 'bg-accent/10 text-accent font-medium' : 'text-primary'
                       }`}
                     >
-                      {t.title}
-                    </span>
-                    {(() => {
-                      const q = formatQuality(t);
-                      return q ? (
-                        <span className="hidden shrink-0 rounded bg-slate-700/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 md:inline">
+                      <span className="w-8 shrink-0 text-center font-mono text-[11px] text-tertiary">
+                        {isCurrentInApp ? (
+                          <span className="text-accent font-bold">
+                            {isPlaying ? '▶' : '⏸'}
+                          </span>
+                        ) : (
+                          t.track_number ?? i + 1
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1 flex flex-col justify-center">
+                        <span
+                          className={`truncate ${
+                            isCurrentInApp ? 'font-semibold text-accent' : 'text-primary'
+                          }`}
+                        >
+                          {t.title}
+                        </span>
+                        {t.artist && t.artist !== level.artist && (
+                          <span className="truncate text-[11px] text-secondary">
+                            {t.artist}
+                          </span>
+                        )}
+                      </div>
+                      {q && (
+                        <span className="hidden shrink-0 rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[10px] text-tertiary md:inline">
                           {q}
                         </span>
-                      ) : null;
-                    })()}
-                  {t.year ? (
-                    <span className="hidden shrink-0 text-xs text-slate-500 sm:inline">
-                      {t.year}
-                    </span>
-                  ) : null}
-                  <span className="w-12 shrink-0 text-right font-mono text-xs text-slate-400">
-                    {formatDuration(t.duration)}
-                  </span>
-                </button>
-              );
-            })}
-            </div>
-          )}
+                      )}
+                      {t.year && (
+                        <span className="hidden shrink-0 text-xs text-tertiary sm:inline font-mono">
+                          {t.year}
+                        </span>
+                      )}
+                      <span className="w-12 shrink-0 text-right font-mono text-[11px] text-tertiary">
+                        {formatDuration(t.duration)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </section>
       )}
     </div>

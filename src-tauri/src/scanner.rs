@@ -317,6 +317,12 @@ pub fn scan_directory_with_progress(
                 if m.artist.is_none() {
                     m.artist = artist_fb;
                 }
+                // Albüm adından [Disc 1], CD 2 vb. ekleri temizle ve disc_number'a aktar
+                if let Some(ref alb) = m.album {
+                    let (clean, d) = db::clean_album_and_disc(alb, m.disc_number);
+                    m.album = Some(clean);
+                    m.disc_number = d;
+                }
                 // Tag yoksa dosya adı başındaki sayı ("01 -", "12.", "7_")
                 if m.track_number.is_none() {
                     m.track_number = track_from_stem(&stem);
@@ -341,8 +347,8 @@ pub fn scan_directory_with_progress(
                                     m.album.as_deref().unwrap_or(""),
                                     mime,
                                     data,
-                                )
-                                .ok()
+                                    )
+                                    .ok()
                             })
                             .or_else(|| crate::cover::folder_cover(path))
                             .map(|p| p.to_string_lossy().to_string());
@@ -352,6 +358,7 @@ pub fn scan_directory_with_progress(
                         resolved
                     }
                 };
+                let music_folder_path = path.parent().map(|p| p.to_string_lossy().to_string());
                 NewMediaItem {
                     title: m.title,
                     artist: m.artist,
@@ -368,7 +375,7 @@ pub fn scan_directory_with_progress(
                     show_title: None,
                     season: None,
                     episode: None,
-                    folder_path: None,
+                    folder_path: music_folder_path,
                     subtitle_count: 0,
                     subtitle_path: None,
                     genre: m.genre,
@@ -521,7 +528,7 @@ fn read_audio_metadata(path: &Path, fallback_title: &str) -> AudioMeta {
         Ok(tagged_file) => {
             let props = tagged_file.properties();
             let duration_secs = props.duration().as_secs();
-            let tag = tagged_file.primary_tag();
+            let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag());
             // Kapak: öncelik ön kapak (CoverFront), yoksa ilk gömülü resim
             let cover = tag.and_then(|t| {
                 t.pictures()
@@ -712,3 +719,42 @@ pub fn local_ip() -> Option<String> {
         None
     }
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LyricsResult {
+    pub text: String,
+    pub is_synced: bool,
+}
+
+/// Şarkının yanındaki .lrc dosyasını veya dosya içi gömülü sözleri okur.
+pub fn read_lyrics(file_path: &std::path::Path) -> Option<LyricsResult> {
+    // 1. Yanındaki .lrc dosyasını kontrol et (örn: sarki.flac -> sarki.lrc)
+    let lrc_path = file_path.with_extension("lrc");
+    if lrc_path.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&lrc_path) {
+            let is_synced = content.contains("[0") || content.contains("[1") || content.contains("[2");
+            return Some(LyricsResult {
+                text: content,
+                is_synced,
+            });
+        }
+    }
+
+    // 2. lofty ile gömülü metadata tag'lerini kontrol et
+    use lofty::prelude::*;
+    use lofty::tag::ItemKey;
+    if let Ok(tagged_file) = lofty::read_from_path(file_path) {
+        if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+            if let Some(lyrics_str) = tag.get_string(&ItemKey::Lyrics) {
+                let is_synced = lyrics_str.contains("[0") || lyrics_str.contains("[1") || lyrics_str.contains("[2");
+                return Some(LyricsResult {
+                    text: lyrics_str.to_string(),
+                    is_synced,
+                });
+            }
+        }
+    }
+
+    None
+}
+
