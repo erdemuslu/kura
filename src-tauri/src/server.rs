@@ -258,9 +258,11 @@ pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
         .route("/api/stream", get(stream_media))
         .route("/api/stream/video", get(stream_video_route))
         .route("/api/hls/:session/master.m3u8", get(hls_master_route))
+        .route("/api/hls/:session/stop", post(hls_stop_route))
         .route("/api/hls/:session/:file", get(hls_file_route))
         .route("/api/subtitle", get(subtitle_route))
         .route("/api/media/probe", get(media_probe_route))
+        .route("/api/media/keyframe", get(media_keyframe_route))
         .route("/api/ffmpeg/status", get(ffmpeg_status_route))
         .route(
             "/api/settings/player",
@@ -1519,6 +1521,38 @@ async fn hls_master_route(
     }
 }
 
+/// `/api/hls/:session/stop` — HLS oturumunu ve FFmpeg child sürecini sonlandırır.
+async fn hls_stop_route(
+    axum::extract::Path(session): axum::extract::Path<String>,
+    State(st): State<ServerState>,
+) -> Response {
+    if session.contains("..") || session.contains('/') || session.contains('\\') {
+        return (StatusCode::BAD_REQUEST, "Geçersiz oturum").into_response();
+    }
+
+    let mut map = st.hls.sessions.lock().await;
+    if let Some(mut entry) = map.remove(&session) {
+        if let Some(mut child) = entry.child.take() {
+            let _ = child.kill().await;
+        }
+        let dir = entry.dir;
+        drop(map);
+        tokio::spawn(async move {
+            let _ = tokio::fs::remove_dir_all(&dir).await;
+        });
+        return (StatusCode::OK, Json(serde_json::json!({ "success": true, "stopped": true }))).into_response();
+    }
+
+    // Bellekte yoksa bile temp klasörünü temizle
+    let session_dir = std::env::temp_dir().join("kura-hls").join(&session);
+    drop(map);
+    if session_dir.exists() {
+        let _ = tokio::fs::remove_dir_all(&session_dir).await;
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({ "success": true, "stopped": false }))).into_response()
+}
+
 /// `/api/hls/:session/:file` — HLS parçacıklarını (.ts, .m3u8) sunar
 async fn hls_file_route(
     axum::extract::Path((session, file)): axum::extract::Path<(String, String)>,
@@ -1701,6 +1735,21 @@ pub struct MediaProbeResponse {
     pub duration: Option<f64>,
 }
 
+#[derive(Deserialize)]
+pub struct MediaKeyframeQuery {
+    pub path: Option<String>,
+    pub start: Option<f64>,
+}
+
+#[derive(Serialize)]
+pub struct MediaKeyframeResponse {
+    pub success: bool,
+    /// İstenen zamandan önceki (veya eşit) gerçek keyframe zamanı (saniye).
+    pub keyframe: Option<f64>,
+    /// İstemcinin istediği hedef zaman.
+    pub requested: Option<f64>,
+}
+
 /// `/api/media/probe` — Video/medya dosyasının süresini hızlıca tespit eder (<50ms).
 /// Önce veritabanında arar, yoksa FFmpeg ile header'dan süreyi okuyup DB'ye yazar.
 async fn media_probe_route(
@@ -1764,6 +1813,67 @@ async fn media_probe_route(
     Json(MediaProbeResponse {
         success: false,
         duration: None,
+    })
+}
+
+/// `/api/media/keyframe` — Verilen zamandan önceki en yakın video keyframe zamanını döner.
+/// HLS `-ss` + copy seek sonrası altyazı senkronu için frontend `hlsOffset` olarak kullanır.
+async fn media_keyframe_route(
+    Query(q): Query<MediaKeyframeQuery>,
+    State(st): State<ServerState>,
+) -> Json<MediaKeyframeResponse> {
+    let Some(file_path) = q.path else {
+        return Json(MediaKeyframeResponse {
+            success: false,
+            keyframe: None,
+            requested: None,
+        });
+    };
+    let requested = q.start.unwrap_or(0.0).max(0.0);
+
+    if requested <= 0.05 {
+        return Json(MediaKeyframeResponse {
+            success: true,
+            keyframe: Some(0.0),
+            requested: Some(requested),
+        });
+    }
+
+    // Dosyanın indekste olduğunu doğrula (opsiyonel güvenlik)
+    let db_path = st.db_path.clone();
+    let fp_check = file_path.clone();
+    let indexed = tokio::task::spawn_blocking(move || {
+        let conn = db::open(&db_path).ok()?;
+        db::path_exists(&conn, &fp_check).ok()
+    })
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(false);
+
+    if !indexed && !PathBuf::from(&file_path).exists() {
+        return Json(MediaKeyframeResponse {
+            success: false,
+            keyframe: None,
+            requested: Some(requested),
+        });
+    }
+
+    if let Some(ffprobe) = ffmpeg::find_ffprobe() {
+        if let Some(kf) = ffmpeg::probe_keyframe_before(&ffprobe, &file_path, requested).await {
+            return Json(MediaKeyframeResponse {
+                success: true,
+                keyframe: Some(kf),
+                requested: Some(requested),
+            });
+        }
+    }
+
+    // ffprobe yoksa veya başarısızsa istenen zamanı döndür (eski davranışa düş)
+    Json(MediaKeyframeResponse {
+        success: true,
+        keyframe: Some(requested),
+        requested: Some(requested),
     })
 }
 

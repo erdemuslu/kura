@@ -395,6 +395,12 @@ function hashString(str: string): string {
   return Math.abs(hash).toString(36);
 }
 
+/** HLS oturum kimliği — istemci ve stop endpoint ile aynı algoritma. */
+export function hlsSessionId(filePath: string, startSeconds = 0): string {
+  const startSec = Math.floor(startSeconds || 0);
+  return `vid_${hashString(filePath)}_${startSec}`;
+}
+
 /**
  * Video akış URL'si — MP4/MOV native formatlar doğrudan HTTP Range ile,
  * MKV/AVI gibi formatlar ise Safari / WebKit uyumlu HLS (.m3u8) akışıyla beslenir.
@@ -416,8 +422,7 @@ export function streamVideoUrl(filePath: string, startSeconds?: number): string 
   }
 
   // Non-native (mkv vb.) veya seek gerektiren durumlarda Apple HLS motoru
-  const startSec = Math.floor(startSeconds || 0);
-  const session = `vid_${hashString(filePath)}_${startSec}`;
+  const session = hlsSessionId(filePath, startSeconds || 0);
   return `${base}/api/hls/${session}/master.m3u8?${params.toString()}`;
 }
 
@@ -436,6 +441,51 @@ export async function probeMediaDuration(filePath: string): Promise<number | nul
     return typeof data.duration === 'number' && data.duration > 0 ? data.duration : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Verilen zamandan önceki en yakın video keyframe zamanını sorgular.
+ * HLS copy-seek sonrası altyazı senkronu için `hlsOffset` olarak kullanılır.
+ */
+export async function probeKeyframeBefore(
+  filePath: string,
+  startSeconds: number,
+): Promise<number | null> {
+  try {
+    const base = isRunningInTauri() ? 'http://localhost:8080' : '';
+    const params = new URLSearchParams({
+      path: filePath,
+      start: String(Math.max(0, startSeconds)),
+    });
+    const token = getRemoteToken();
+    if (token) params.set('token', token);
+    const res = await fetch(`${base}/api/media/keyframe?${params.toString()}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (typeof data.keyframe === 'number' && data.keyframe >= 0 && Number.isFinite(data.keyframe)) {
+      return data.keyframe;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Aktif HLS FFmpeg oturumunu sunucuda durdurur. */
+export async function stopHlsSession(sessionId: string): Promise<void> {
+  if (!sessionId) return;
+  try {
+    const base = isRunningInTauri() ? 'http://localhost:8080' : '';
+    const params = new URLSearchParams();
+    const token = getRemoteToken();
+    if (token) params.set('token', token);
+    const qs = params.toString();
+    await fetch(`${base}/api/hls/${encodeURIComponent(sessionId)}/stop${qs ? `?${qs}` : ''}`, {
+      method: 'POST',
+    });
+  } catch {
+    // Kapanış yolu — hata yutulur
   }
 }
 

@@ -173,13 +173,25 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     sendLastFmNowPlaying(track.artist || 'Unknown Artist', track.title, track.album, track.duration);
 
     const url = streamUrl(track.file_path);
+    audio.pause();
     audio.src = url;
+    audio.load();
     audio
       .play()
       .then(() => setIsPlaying(true))
       .catch((err) => {
-        console.warn('Otomatik oynatma engellendi veya dosya açılamadı:', err);
-        setIsPlaying(false);
+        // Video teardown sonrası WKWebView bazen ilk play'i reddeder — bir kez daha dene
+        console.warn('Otomatik oynatma engellendi veya dosya açılamadı, yeniden deneniyor:', err);
+        window.setTimeout(() => {
+          if (currentTrackRef.current?.file_path !== track.file_path) return;
+          audio
+            .play()
+            .then(() => setIsPlaying(true))
+            .catch((retryErr) => {
+              console.warn('Oynatma başarısız:', retryErr);
+              setIsPlaying(false);
+            });
+        }, 120);
       });
   }, []);
 
@@ -319,8 +331,12 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const resume = useCallback(() => {
-    audioRef.current?.play().catch(() => {});
-    setIsPlaying(true);
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio
+      .play()
+      .then(() => setIsPlaying(true))
+      .catch(() => setIsPlaying(false));
   }, []);
 
   const seek = useCallback((seconds: number) => {
@@ -383,7 +399,12 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   );
 
   const clearQueue = useCallback(() => {
-    audioRef.current?.pause();
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    }
     setQueue([]);
     setCurrentTrack(null);
     setQueueIndex(-1);

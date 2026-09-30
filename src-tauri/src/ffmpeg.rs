@@ -234,6 +234,92 @@ pub async fn probe_duration(ffmpeg_path: &Path, file_path: &str) -> Option<f64> 
     parse_duration_from_stderr(&stderr)
 }
 
+/// Sistemde veya FFmpeg ile aynı dizinde ffprobe ikilisini arar.
+pub fn find_ffprobe() -> Option<PathBuf> {
+    if let Some(ffmpeg) = find_ffmpeg() {
+        if let Some(name) = ffmpeg.file_name().and_then(|n| n.to_str()) {
+            let probe_name = name.replace("ffmpeg", "ffprobe");
+            if probe_name != name {
+                let candidate = ffmpeg.with_file_name(&probe_name);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+        if let Some(parent) = ffmpeg.parent() {
+            let candidate = parent.join("ffprobe");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    if let Ok(output) = std::process::Command::new("which").arg("ffprobe").output() {
+        if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path_str.is_empty() {
+                let p = PathBuf::from(path_str);
+                if p.is_file() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// `target_seconds` anından önceki (veya eşit) en yakın video keyframe zamanını döner.
+/// HLS `-ss` + `-c:v copy` seek ile aynı noktaya hizalamak için kullanılır.
+pub async fn probe_keyframe_before(
+    ffprobe_path: &Path,
+    file_path: &str,
+    target_seconds: f64,
+) -> Option<f64> {
+    if target_seconds <= 0.05 {
+        return Some(0.0);
+    }
+
+    // Uzun GOP'lar için geniş pencere; tarama maliyetini sınırlı tutar.
+    let window_start = (target_seconds - 180.0).max(0.0);
+    let interval = format!("{:.3}%{:.3}", window_start, target_seconds);
+
+    let mut cmd = tokio::process::Command::new(ffprobe_path);
+    cmd.kill_on_drop(true);
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::null());
+    cmd.arg("-v").arg("error");
+    cmd.arg("-select_streams").arg("v:0");
+    cmd.arg("-show_entries").arg("packet=pts_time,flags");
+    cmd.arg("-of").arg("csv=p=0");
+    cmd.arg("-read_intervals").arg(&interval);
+    cmd.arg(file_path);
+
+    let output = cmd.output().await.ok()?;
+    if !output.status.success() && output.stdout.is_empty() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut last_kf: Option<f64> = None;
+    for line in stdout.lines() {
+        let mut parts = line.split(',');
+        let Some(pts_str) = parts.next() else { continue };
+        let Some(flags) = parts.next() else { continue };
+        let Ok(pts) = pts_str.trim().parse::<f64>() else { continue };
+        if !pts.is_finite() || pts < 0.0 {
+            continue;
+        }
+        // Keyframe bayrağı: "K__" veya "K_K" vb.
+        if flags.contains('K') && pts <= target_seconds + 0.05 {
+            last_kf = Some(pts);
+        }
+    }
+
+    last_kf.or_else(|| Some(window_start.min(target_seconds)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

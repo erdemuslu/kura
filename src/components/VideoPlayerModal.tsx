@@ -18,9 +18,12 @@ import {
 } from 'lucide-react';
 import { formatDuration } from '../lib/format';
 import {
+  hlsSessionId,
   isRunningInTauri,
   launchPlayer,
+  probeKeyframeBefore,
   probeMediaDuration,
+  stopHlsSession,
   streamVideoUrl,
   subtitleUrl,
 } from '../api/client';
@@ -131,6 +134,17 @@ export default function VideoPlayerModal({
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  /** HLS effective time hesabı için senkron offset (React state gecikmesinden bağımsız). */
+  const hlsOffsetRef = useRef(0);
+  const isHlsStreamRef = useRef(false);
+  /** Aktif sunucu HLS oturumu — kapanışta FFmpeg kill için. */
+  const hlsSessionRef = useRef<string | null>(null);
+  /** Yeni HLS oturumu açıldıktan sonra istenen mutlak zamana yaklaşmak için. */
+  const pendingRelativeSeekRef = useRef<number | null>(null);
+  /** Eski async seek sonuçlarının üzerine yazmasını engeller. */
+  const seekGenerationRef = useRef(0);
+  /** Parent video=null yapsa bile teardown sırasında <video> mount kalsın. */
+  const [mountedVideo, setMountedVideo] = useState<VideoPlayerItem | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
@@ -195,14 +209,30 @@ export default function VideoPlayerModal({
   const [hasError, setHasError] = useState(false);
   const [resumePrompt, setResumePrompt] = useState<number | null>(null);
 
+  // Parent isOpen/video değişince local mount kopyasını yönet
+  useEffect(() => {
+    if (isOpen && video) {
+      setMountedVideo(video);
+    }
+  }, [isOpen, video]);
+
+  // Parent kapattığında (müzik exclusive vb.) — video hâlâ mountken teardown
+  useEffect(() => {
+    if (!isOpen && mountedVideo) {
+      teardownMedia();
+      setMountedVideo(null);
+    }
+  }, [isOpen, mountedVideo]);
+
   // 1. Altyazıyı çek ve ayrıştır
   useEffect(() => {
-    if (!isOpen || !video) {
+    const item = mountedVideo;
+    if (!isOpen || !item) {
       setSubtitleCues([]);
       return;
     }
 
-    const url = subtitleUrl(video.filePath, video.subtitlePath ?? undefined);
+    const url = subtitleUrl(item.filePath, item.subtitlePath ?? undefined);
     let cancelled = false;
 
     fetch(url)
@@ -222,18 +252,19 @@ export default function VideoPlayerModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, video?.filePath, video?.subtitlePath]);
+  }, [isOpen, mountedVideo?.filePath, mountedVideo?.subtitlePath]);
 
   // 2. Medya süresini hızlıca tespit et (<50ms probe)
   useEffect(() => {
-    if (!isOpen || !video) return;
+    const item = mountedVideo;
+    if (!isOpen || !item) return;
 
-    const initialDur = video.duration ?? 0;
+    const initialDur = item.duration ?? 0;
     setTotalDuration(initialDur);
 
     if (initialDur <= 0) {
       let cancelled = false;
-      probeMediaDuration(video.filePath).then((dur) => {
+      probeMediaDuration(item.filePath).then((dur) => {
         if (!cancelled && dur && dur > 0) {
           setTotalDuration(dur);
         }
@@ -242,30 +273,79 @@ export default function VideoPlayerModal({
         cancelled = true;
       };
     }
-  }, [isOpen, video?.filePath, video?.duration]);
+  }, [isOpen, mountedVideo?.filePath, mountedVideo?.duration]);
 
   // 3. Medyayı başlat (Native MP4 vs HLS.js)
-  const loadMedia = (startSeconds = 0) => {
-    if (!video) return;
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
-
-    setHasError(false);
-    setIsBuffering(true);
-
-    const videoSrc = streamVideoUrl(video.filePath, startSeconds);
-    const isHls = videoSrc.includes('.m3u8');
-    setIsHlsStream(isHls);
-
-    // Önceki HLS akışını tamamen durdur ve çöz
+  const destroyHlsClient = () => {
     if (hlsRef.current) {
       hlsRef.current.stopLoad();
       hlsRef.current.detachMedia();
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
+  };
+
+  const stopServerHlsSession = () => {
+    const session = hlsSessionRef.current;
+    hlsSessionRef.current = null;
+    if (session) {
+      void stopHlsSession(session);
+    }
+  };
+
+  const teardownMedia = () => {
+    destroyHlsClient();
+    stopServerHlsSession();
+    const el = videoRef.current;
+    if (el) {
+      el.pause();
+      el.removeAttribute('src');
+      el.load();
+    }
+    hlsOffsetRef.current = 0;
+    isHlsStreamRef.current = false;
+    pendingRelativeSeekRef.current = null;
+  };
+
+  const applyHlsOffset = (seconds: number) => {
+    hlsOffsetRef.current = seconds;
+    setHlsOffset(seconds);
+  };
+
+  const syncEffectiveTime = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    const raw = el.currentTime || 0;
+    const effective = isHlsStreamRef.current ? hlsOffsetRef.current + raw : raw;
+    setCurrentTime(effective);
+  };
+
+  const loadMedia = (startSeconds = 0, seekTargetAbsolute?: number) => {
+    const item = mountedVideo;
+    if (!item) return;
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    setHasError(false);
+    setIsBuffering(true);
+
+    // Önceki sunucu oturumunu ve istemci HLS'ini temizle
+    destroyHlsClient();
+    stopServerHlsSession();
+
+    const videoSrc = streamVideoUrl(item.filePath, startSeconds);
+    const isHls = videoSrc.includes('.m3u8');
+    isHlsStreamRef.current = isHls;
+    setIsHlsStream(isHls);
 
     if (isHls) {
+      hlsSessionRef.current = hlsSessionId(item.filePath, startSeconds);
+      const relative =
+        seekTargetAbsolute !== undefined && seekTargetAbsolute > startSeconds
+          ? seekTargetAbsolute - startSeconds
+          : null;
+      pendingRelativeSeekRef.current = relative;
+
       if (Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
@@ -281,12 +361,15 @@ export default function VideoPlayerModal({
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           setIsBuffering(false);
-          videoEl.currentTime = 0;
+          const rel = pendingRelativeSeekRef.current;
+          pendingRelativeSeekRef.current = null;
+          videoEl.currentTime = rel && rel > 0.15 ? rel : 0;
           videoEl.play().catch(() => {
             setIsPlaying(false);
             setControlsVisible(true);
           });
           setIsPlaying(true);
+          syncEffectiveTime();
         });
 
         hls.on(Hls.Events.ERROR, (_, data) => {
@@ -312,6 +395,8 @@ export default function VideoPlayerModal({
         setHasError(true);
       }
     } else {
+      hlsSessionRef.current = null;
+      pendingRelativeSeekRef.current = null;
       // Standart MP4 / WebM / MOV
       videoEl.src = videoSrc;
       if (startSeconds > 0) {
@@ -325,17 +410,17 @@ export default function VideoPlayerModal({
   };
 
   useEffect(() => {
-    if (!isOpen || !video) return;
+    if (!isOpen || !mountedVideo) return;
 
     setCurrentTime(0);
-    setHlsOffset(0);
+    applyHlsOffset(0);
     setIsPlaying(false);
     setControlsVisible(true);
 
     loadMedia(0);
 
     // Kaldığı yerden devam etme kontrolü
-    const savedPos = localStorage.getItem(`kura-resume-${video.filePath}`);
+    const savedPos = localStorage.getItem(`kura-resume-${mountedVideo.filePath}`);
     if (savedPos) {
       const pos = parseFloat(savedPos);
       if (pos > 10) {
@@ -346,27 +431,25 @@ export default function VideoPlayerModal({
     }
 
     return () => {
-      if (hlsRef.current) {
-        hlsRef.current.stopLoad();
-        hlsRef.current.detachMedia();
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
+      // Dosya değişiminde temizle; parent close ayrı effect ile handle edilir
+      destroyHlsClient();
+      stopServerHlsSession();
     };
-  }, [isOpen, video?.filePath]);
+  }, [isOpen, mountedVideo?.filePath]);
 
   // İzleme pozisyonunu kaydet
   useEffect(() => {
-    if (!isOpen || !video || currentTime < 5) return;
+    if (!isOpen || !mountedVideo || currentTime < 5) return;
+    const filePath = mountedVideo.filePath;
     const interval = setInterval(() => {
       if (currentTime > 10 && totalDuration > 0 && currentTime < totalDuration - 15) {
-        localStorage.setItem(`kura-resume-${video.filePath}`, String(currentTime));
+        localStorage.setItem(`kura-resume-${filePath}`, String(currentTime));
       } else if (totalDuration > 0 && currentTime >= totalDuration - 15) {
-        localStorage.removeItem(`kura-resume-${video.filePath}`);
+        localStorage.removeItem(`kura-resume-${filePath}`);
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [isOpen, video, currentTime, totalDuration]);
+  }, [isOpen, mountedVideo, currentTime, totalDuration]);
 
   // Fare hareketiyle kontrolleri göster
   const handleMouseMove = () => {
@@ -431,6 +514,7 @@ export default function VideoPlayerModal({
         if (isFullscreen) {
           document.exitFullscreen().catch(() => {});
         } else {
+          teardownMedia();
           onClose();
         }
       }
@@ -440,7 +524,15 @@ export default function VideoPlayerModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isPlaying, isFullscreen, volume, isMuted, currentTime, totalDuration, isHlsStream, hlsOffset, subSettings.offset]);
 
-  if (!isOpen || !video) return null;
+  const handleClose = () => {
+    teardownMedia();
+    setMountedVideo(null);
+    onClose();
+  };
+
+  if (!mountedVideo) return null;
+
+  const displayVideo = mountedVideo;
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -458,7 +550,7 @@ export default function VideoPlayerModal({
     const bounded = Math.max(0, Math.min(totalDuration || Infinity, targetSeconds));
     setControlsVisible(true);
 
-    if (!isHlsStream) {
+    if (!isHlsStreamRef.current) {
       if (videoRef.current) {
         videoRef.current.currentTime = bounded;
         setCurrentTime(bounded);
@@ -467,7 +559,8 @@ export default function VideoPlayerModal({
     }
 
     // HLS akışı: Eğer aranan nokta mevcut segment tamponunun içindeyse
-    const relativeTarget = bounded - hlsOffset;
+    const offset = hlsOffsetRef.current;
+    const relativeTarget = bounded - offset;
     const currentDuration = videoRef.current?.duration || 0;
 
     if (relativeTarget >= 0 && relativeTarget <= currentDuration) {
@@ -475,22 +568,32 @@ export default function VideoPlayerModal({
         videoRef.current.currentTime = relativeTarget;
         setCurrentTime(bounded);
       }
-    } else {
-      // Tampon dışındaysa: Önceki akışı temizleyip FFmpeg'i aranan noktadan başlat
-      if (hlsRef.current) {
-        hlsRef.current.stopLoad();
-        hlsRef.current.detachMedia();
-        hlsRef.current.destroy();
-        hlsRef.current = null;
+      return;
+    }
+
+    // Tampon dışı: gerçek keyframe zamanını bul, FFmpeg'i oradan başlat
+    void (async () => {
+      const gen = ++seekGenerationRef.current;
+      setIsBuffering(true);
+
+      let actualStart = bounded;
+      const probed = await probeKeyframeBefore(displayVideo.filePath, bounded);
+      if (gen !== seekGenerationRef.current) return;
+
+      if (probed !== null && Number.isFinite(probed)) {
+        actualStart = Math.max(0, Math.min(bounded, probed));
       }
+
+      destroyHlsClient();
       if (videoRef.current) {
         videoRef.current.pause();
         videoRef.current.currentTime = 0;
       }
-      setHlsOffset(bounded);
+
+      applyHlsOffset(actualStart);
       setCurrentTime(bounded);
-      loadMedia(bounded);
-    }
+      loadMedia(actualStart, bounded);
+    })();
   };
 
   const seekRelative = (delta: number) => {
@@ -559,9 +662,12 @@ export default function VideoPlayerModal({
   };
 
   const launchExternally = async (targetApp = 'system') => {
+    const filePath = displayVideo.filePath;
+    teardownMedia();
+    setMountedVideo(null);
     onClose();
     onExternalLaunch?.();
-    await launchPlayer({ filePath: video.filePath, targetApp }).catch(() => {});
+    await launchPlayer({ filePath, targetApp }).catch(() => {});
   };
 
   const resumeAtSaved = () => {
@@ -585,6 +691,8 @@ export default function VideoPlayerModal({
       ref={containerRef}
       onMouseMove={handleMouseMove}
       className={`fixed inset-0 z-50 flex flex-col justify-between bg-black select-none ${
+        !isOpen ? 'invisible pointer-events-none' : ''
+      } ${
         !controlsVisible && isPlaying ? 'cursor-none' : 'cursor-default'
       }`}
     >
@@ -594,17 +702,12 @@ export default function VideoPlayerModal({
         playsInline
         preload="auto"
         onClick={togglePlay}
-        onTimeUpdate={() => {
-          if (videoRef.current) {
-            const raw = videoRef.current.currentTime || 0;
-            const effective = isHlsStream ? hlsOffset + raw : raw;
-            setCurrentTime(effective);
-          }
-        }}
+        onTimeUpdate={syncEffectiveTime}
+        onSeeked={syncEffectiveTime}
         onDurationChange={() => {
           if (videoRef.current) {
             const nativeDur = videoRef.current.duration;
-            if (!isHlsStream && nativeDur && !isNaN(nativeDur) && nativeDur > 0) {
+            if (!isHlsStreamRef.current && nativeDur && !isNaN(nativeDur) && nativeDur > 0) {
               setTotalDuration(nativeDur);
             }
           }
@@ -741,7 +844,7 @@ export default function VideoPlayerModal({
               </button>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleClose}
                 className="rounded-xl px-4 py-2.5 text-xs text-tertiary hover:text-primary transition"
               >
                 Kapat
@@ -761,7 +864,7 @@ export default function VideoPlayerModal({
         <div className="flex items-center gap-4 min-w-0">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-primary ring-1 ring-white/10 hover:bg-white/20 transition backdrop-blur-md"
             title="Kapat (Esc)"
           >
@@ -769,10 +872,10 @@ export default function VideoPlayerModal({
           </button>
           <div className="min-w-0">
             <h2 className="font-serif text-lg sm:text-xl font-normal text-white truncate tracking-tight">
-              {video.title}
+              {displayVideo.title}
             </h2>
-            {video.subTitle && (
-              <p className="text-xs text-secondary truncate mt-0.5">{video.subTitle}</p>
+            {displayVideo.subTitle && (
+              <p className="text-xs text-secondary truncate mt-0.5">{displayVideo.subTitle}</p>
             )}
           </div>
         </div>
@@ -792,7 +895,7 @@ export default function VideoPlayerModal({
           )}
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-tertiary ring-1 ring-white/10 hover:bg-white/20 hover:text-white transition backdrop-blur-md"
             title="Kapat"
           >

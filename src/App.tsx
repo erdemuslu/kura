@@ -283,12 +283,25 @@ function MainLayout() {
     }
   };
 
+  const closeVideo = () => {
+    setActiveVideo(null);
+    setPlayingPath(null);
+  };
+
   const handlePlayVideo = (item: VideoPlayerItem) => {
     setActiveVideo(item);
     setPlayingPath(item.filePath);
     if (isPlaying) {
       pause();
     }
+  };
+
+  /** Müzik başlarken açık videoyu kapat (exclusive playback). */
+  const handleMusicPlayed = (path: string | null) => {
+    if (activeVideo) {
+      setActiveVideo(null);
+    }
+    setPlayingPath(path);
   };
 
   const authError = disks.error instanceof ApiAuthError;
@@ -677,7 +690,7 @@ function MainLayout() {
             player={audioPlayer}
             query={query}
             playingPath={playingPath}
-            onPlayed={handleMediaPlayed}
+            onPlayed={handleMusicPlayed}
             onOpenScanModal={() => handleOpenScanForCategory(activeCategory)}
             hasSources={activeCategory.paths.length > 0}
             onManageSources={() => setShowManageSources(true)}
@@ -799,8 +812,8 @@ function MainLayout() {
       <VideoPlayerModal
         isOpen={Boolean(activeVideo)}
         video={activeVideo}
-        onClose={() => setActiveVideo(null)}
-        onExternalLaunch={() => setActiveVideo(null)}
+        onClose={closeVideo}
+        onExternalLaunch={closeVideo}
       />
     </div>
   );

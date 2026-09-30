@@ -91,7 +91,10 @@ export default function MusicView({
   const playSingle = async (item: MediaItem) => {
     onPlayed(item.file_path);
     if (player === 'in_app') {
-      playTrack(item, tracks.data ?? [item]);
+      // Video teardown'unun (pause/src clear) bir frame tamamlanmasına izin ver
+      requestAnimationFrame(() => {
+        playTrack(item, tracks.data ?? [item]);
+      });
       return;
     }
     setFeedback(await launchPlayer({ filePath: item.file_path, targetApp: player }));
@@ -107,8 +110,10 @@ export default function MusicView({
         return;
       }
       if (player === 'in_app') {
-        playQueue(list, 0);
         onPlayed(list[0]?.file_path ?? null);
+        requestAnimationFrame(() => {
+          playQueue(list, 0);
+        });
         return;
       }
       const result = await launchPlayerBatch(
