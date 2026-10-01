@@ -21,7 +21,20 @@
 
 ## Ekran görüntüleri
 
-_Yakında eklenecek. Şimdilik arayüzü yerelde çalıştırarak keşfedebilirsin._
+<p align="center">
+  <img src="docs/screenshots/music-library.jpg" alt="Müzik kütüphanesi" width="800" />
+  <br /><em>Müzik kütüphanesi — albüm ızgarası</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/album-detail.jpg" alt="Albüm detayı" width="800" />
+  <br /><em>Albüm detayı — şarkı listesi ve ses kalitesi rozetleri</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/now-playing.jpg" alt="Şimdi çalıyor" width="800" />
+  <br /><em>Şimdi çalıyor — tam ekran oynatıcı</em>
+</p>
 
 ## Gereksinimler
 

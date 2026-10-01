@@ -21,7 +21,20 @@ Built with **Tauri v2**, **Rust**, and **React**.
 
 ## Screenshots
 
-_Screenshots coming soon. For now, run the app locally to explore the UI._
+<p align="center">
+  <img src="docs/screenshots/music-library.jpg" alt="Music library" width="800" />
+  <br /><em>Music library — albums grid</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/album-detail.jpg" alt="Album detail" width="800" />
+  <br /><em>Album detail — tracklist and audio quality badges</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/now-playing.jpg" alt="Now Playing" width="800" />
+  <br /><em>Now Playing — full-screen player</em>
+</p>
 
 ## Requirements
 
