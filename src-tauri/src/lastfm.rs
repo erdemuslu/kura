@@ -301,23 +301,24 @@ pub async fn scrobble(
         .build()
         .map_err(|e| e.to_string())?;
 
+    // track.scrobble indexed params gerektirir: artist[0], track[0], timestamp[0], …
     let mut params = vec![
         ("api_key".to_string(), api_key.to_string()),
-        ("artist".to_string(), artist.to_string()),
+        ("artist[0]".to_string(), artist.to_string()),
         ("method".to_string(), "track.scrobble".to_string()),
         ("sk".to_string(), session_key.to_string()),
-        ("timestamp".to_string(), timestamp.to_string()),
-        ("track".to_string(), track.to_string()),
+        ("timestamp[0]".to_string(), timestamp.to_string()),
+        ("track[0]".to_string(), track.to_string()),
     ];
 
     if let Some(alb) = album {
         if !alb.trim().is_empty() && alb != crate::db::UNKNOWN_ALBUM {
-            params.push(("album".to_string(), alb.trim().to_string()));
+            params.push(("album[0]".to_string(), alb.trim().to_string()));
         }
     }
     if let Some(dur) = duration {
         if dur > 0 {
-            params.push(("duration".to_string(), dur.to_string()));
+            params.push(("duration[0]".to_string(), dur.to_string()));
         }
     }
 
@@ -336,6 +337,27 @@ pub async fn scrobble(
     if let Some(err) = json.get("error") {
         let msg = json.get("message").and_then(|m| m.as_str()).unwrap_or("Hata");
         return Err(format!("Last.fm scrobble hatası ({err}): {msg}"));
+    }
+
+    // accepted=0 / ignored>0 durumunu logla (timestamp too old/new vb.)
+    if let Some(attr) = json
+        .pointer("/scrobbles/@attr")
+        .or_else(|| json.pointer("/scrobbles/attr"))
+    {
+        let ignored = attr
+            .get("ignored")
+            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .unwrap_or(0);
+        if ignored > 0 {
+            let code = json
+                .pointer("/scrobbles/scrobble/ignoredMessage/@code")
+                .or_else(|| json.pointer("/scrobbles/scrobble/ignoredMessage/code"))
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "?".to_string());
+            eprintln!(
+                "Last.fm scrobble yok sayıldı (ignored={ignored}, code={code}): {artist} – {track}"
+            );
+        }
     }
 
     Ok(())
@@ -404,6 +426,28 @@ mod tests {
 
         // Beklenen string kontrolü
         let expected_raw = "api_keymy_api_keymethodauth.getSessiontokenmy_tokenmy_secret";
+        let mut hasher = Md5::new();
+        hasher.update(expected_raw.as_bytes());
+        let expected_sig = format!("{:x}", hasher.finalize());
+        assert_eq!(sig, expected_sig);
+    }
+
+    #[test]
+    fn test_scrobble_indexed_signature_order() {
+        // track.scrobble imzasında artist[0]/track[0]/timestamp[0] alfabetik sırada yer alır
+        let params = vec![
+            ("api_key".to_string(), "k".to_string()),
+            ("artist[0]".to_string(), "Artist".to_string()),
+            ("method".to_string(), "track.scrobble".to_string()),
+            ("sk".to_string(), "session".to_string()),
+            ("timestamp[0]".to_string(), "123".to_string()),
+            ("track[0]".to_string(), "Song".to_string()),
+        ];
+        let secret = "secret";
+        let sig = generate_signature(&params, secret);
+
+        let expected_raw =
+            "api_keykartist[0]Artistmethodtrack.scrobblesksessiontimestamp[0]123track[0]Songsecret";
         let mut hasher = Md5::new();
         hasher.update(expected_raw.as_bytes());
         let expected_sig = format!("{:x}", hasher.finalize());

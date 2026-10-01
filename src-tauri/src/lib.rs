@@ -612,7 +612,7 @@ async fn lastfm_now_playing(
     .map_err(|e| e.to_string())??;
 
     if let Some(((api_key, secret), sk)) = creds {
-        let _ = lastfm::update_now_playing(
+        if let Err(e) = lastfm::update_now_playing(
             &api_key,
             &secret,
             &sk,
@@ -621,7 +621,10 @@ async fn lastfm_now_playing(
             album.as_deref(),
             duration,
         )
-        .await;
+        .await
+        {
+            eprintln!("Last.fm now playing hatası: {e}");
+        }
     }
     Ok(())
 }
@@ -651,7 +654,7 @@ async fn lastfm_scrobble(
     .map_err(|e| e.to_string())??;
 
     if let Some(((api_key, secret), sk)) = creds {
-        let _ = lastfm::scrobble(
+        lastfm::scrobble(
             &api_key,
             &secret,
             &sk,
@@ -661,7 +664,7 @@ async fn lastfm_scrobble(
             album.as_deref(),
             duration,
         )
-        .await;
+        .await?;
     }
     Ok(())
 }

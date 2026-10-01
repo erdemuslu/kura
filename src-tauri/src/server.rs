@@ -2031,7 +2031,7 @@ async fn lastfm_now_playing_route(
     .map_err(internal_error)?;
 
     if let Some(((api_key, secret), sk)) = creds {
-        let _ = lastfm::update_now_playing(
+        if let Err(e) = lastfm::update_now_playing(
             &api_key,
             &secret,
             &sk,
@@ -2040,7 +2040,10 @@ async fn lastfm_now_playing_route(
             p.album.as_deref(),
             p.duration,
         )
-        .await;
+        .await
+        {
+            eprintln!("Last.fm now playing hatası: {e}");
+        }
     }
 
     Ok(Json(serde_json::json!({ "success": true })))
@@ -2066,7 +2069,7 @@ async fn lastfm_scrobble_route(
     .map_err(internal_error)?;
 
     if let Some(((api_key, secret), sk)) = creds {
-        let _ = lastfm::scrobble(
+        lastfm::scrobble(
             &api_key,
             &secret,
             &sk,
@@ -2076,7 +2079,8 @@ async fn lastfm_scrobble_route(
             p.album.as_deref(),
             p.duration,
         )
-        .await;
+        .await
+        .map_err(internal_error)?;
     }
 
     Ok(Json(serde_json::json!({ "success": true })))

@@ -887,7 +887,7 @@ export async function sendLastFmNowPlaying(
       }),
     });
   } catch (err) {
-    console.debug('Last.fm now playing bildirim hatası:', err);
+    console.warn('Last.fm now playing bildirim hatası:', err);
   }
 }
 
@@ -923,7 +923,7 @@ export async function sendLastFmScrobble(
       }),
     });
   } catch (err) {
-    console.debug('Last.fm scrobble hatası:', err);
+    console.warn('Last.fm scrobble hatası:', err);
   }
 }
 
