@@ -375,10 +375,10 @@ async fn get_remote_info(
 }
 
 /// `dist/` klasörünü Axum'a statik servis için çözer.
-/// Öncelik sırası: MEDIA_HUB_DIST ortam değişkeni, sonra CWD'ye göre
+/// Öncelik sırası: KURA_DIST ortam değişkeni, sonra CWD'ye göre
 /// geliştirme/üretim adayları (tauri dev CWD'si src-tauri'dir).
 fn resolve_dist_path() -> PathBuf {
-    if let Ok(p) = std::env::var("MEDIA_HUB_DIST") {
+    if let Ok(p) = std::env::var("KURA_DIST") {
         return PathBuf::from(p);
     }
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));

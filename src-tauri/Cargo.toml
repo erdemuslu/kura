@@ -1,11 +1,11 @@
 [package]
-name = "local-media-hub"
+name = "kura"
 version = "0.1.0"
-description = "Yerel medya (film, dizi, müzik) yönetim ve uzaktan kumanda merkezi"
+description = "Personal local media archive and remote launcher for movies, series, and music"
 edition = "2021"
 
 [lib]
-name = "local_media_hub_lib"
+name = "kura_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -124,7 +124,7 @@ pub fn execute_playlist(
         return Err("Playlist boş — çalınacak şarkı yok".into());
     }
 
-    let dir = std::env::temp_dir().join("local-media-hub-playlists");
+    let dir = std::env::temp_dir().join("kura-playlists");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Playlist dizini oluşturulamadı: {e}"))?;
     // Önceki oturumlardan kalan geçici playlistleri temizle.
     if let Ok(entries) = std::fs::read_dir(&dir) {

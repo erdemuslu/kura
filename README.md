@@ -1,135 +1,120 @@
-# Local Media Hub
+[English](README.md) | [Türkçe](README.tr.md)
 
-Yerel disklerdeki ve harici sürücülerdeki medya (film, dizi, müzik) dosyalarını
-indeksleyen, bunları varsayılan harici masaüstü oynatıcılarla (VLC, IINA,
-Audirvana, foobar2000 vb.) çalıştıran ve ev ağındaki mobil/TV cihazlardan
-uzaktan kumanda edilebilen bir masaüstü uygulaması.
+<p align="center">
+  <img src="public/brand/kura-logo-dark.svg" alt="Kura" width="280" />
+</p>
 
-## Mimari
+# Kura (蔵)
 
-- **Backend:** Tauri v2 (Rust)
-- **Gömülü sunucu:** Axum HTTP sunucusu (`0.0.0.0:8080`) — arka plan thread'i
-- **Veritabanı:** Gömülü SQLite (app-data dizininde, kalıcı indeks)
-- **Frontend:** React + TypeScript + Vite + Tailwind CSS v4
-- Tek `dist` derlemesi hem Tauri penceresi hem de ağ tarayıcılarına sunulur
+**Personal Media Archive** — index local disks, play with your favorite apps or the built-in player, and control everything from your phone on the same network.
+
+Built with **Tauri v2**, **Rust**, and **React**.
+
+## Features
+
+- **Local-first library** — scan folders on internal or external drives; movies, series, and music land in dedicated views
+- **External + in-app playback** — launch VLC, IINA, Audirvana, foobar2000, and more, or use the built-in music/video players
+- **LAN remote** — the same UI is served on `http://<your-ip>:8080` for phones and tablets
+- **Music hierarchy** — artists → albums → tracks, with “Play all” playlists
+- **Posters & metadata** — folder art, TMDB (optional key), iTunes, and TVmaze fallbacks
+- **Last.fm scrobbling** — mirror what you play in Kura to your Last.fm profile
+
+## Screenshots
+
+_Screenshots coming soon. For now, run the app locally to explore the UI._
+
+## Requirements
+
+- [Node.js](https://nodejs.org/) 18+
+- [Rust](https://www.rust-lang.org/tools/install) (stable) + Tauri prerequisites for your OS
+- macOS (primary target today; Apple Silicon ffmpeg sidecar is bundled under `src-tauri/binaries/`)
+
+## Development
+
+```bash
+npm install                 # frontend dependencies
+npm run tauri dev           # desktop app (Vite + Rust hot-reload)
+```
+
+When the app starts, an Axum server binds to `0.0.0.0:8080` and serves the `dist/` folder to LAN browsers. For a full remote UI on first run:
+
+```bash
+npm run build               # produce dist/ (also used by the LAN server)
+npm run tauri build         # release package
+```
+
+### Useful commands
+
+| Command | Description |
+|---|---|
+| `npm run icon` | Generate the Tauri icon set from `app-icon.png` |
+| `cargo check` (in `src-tauri`) | Rust type/error check |
+| `cargo clippy` (in `src-tauri`) | Rust lints |
+
+Optional env vars (see [`.env.example`](.env.example)):
+
+- `LASTFM_API_KEY` / `LASTFM_SHARED_SECRET` — Last.fm integration
+- `KURA_DIST` — override the path to the static `dist/` folder served by Axum
+
+TMDB keys are entered in the in-app Settings panel (stored in app data, not required in `.env`).
+
+## Usage
+
+1. Launch Kura.
+2. Add a media folder (path field or **Browse…**). Files are classified into Movies / Series / Music.
+   - **Movies** group by folder (e.g. CD1/CD2 → one card); matching subtitles show a CC badge.
+   - **Series** parse `S01E01` / `2x05`-style names into Show → Season → Episode.
+   - Hidden junk (`._*`, `.DS_Store`, etc.) is ignored and cleaned from the index.
+3. Open a card for details (poster, overview, ratings) and play individually or as a playlist.
+4. Music: Albums / Artists → drill down → **Play all** builds an `.m3u8` for the selected player.
+5. On your phone, open `http://<computer-ip>:8080` for the remote UI.
+
+## Architecture
 
 ```
 +------------------------------------------------------------------+
-|                          RUST ÇEKİRDEĞİ                          |
+|                         RUST CORE                                |
 |  +------------------------+    +------------------------------+ |
-|  |     Tauri IPC Core     |    |     Axum HTTP Sunucusu       | |
-|  |  (Masaüstü Penceresi)  |    |  (0.0.0.0:8080 - Ağ Girişi)  | |
+|  |     Tauri IPC Core     |    |     Axum HTTP Server         | |
+|  |  (Desktop Window)      |    |  (0.0.0.0:8080 - LAN)        | |
 |  +-----------+------------+    +---------------+--------------+ |
 |              +---------------------+--------------------------+  |
 |                                    v                             |
-|  +-----------------------------------------------------------+  |
-|  |                 Ortak Servis Katmanı                        |  |
-|  |  runner.rs  - Harici oynatıcı tetikleyici (beyaz liste)    |  |
-|  |  scanner.rs - Dizin tarama + lofty ile müzik metadata      |  |
-|  |  db.rs      - SQLite bağlantı, migration, sorgular          |  |
-|  +-----------------------------------------------------------+  |
+|  Shared services: runner · scanner · db (SQLite) · covers/meta  |
 +------------------------------------------------------------------+
 ```
 
-## Geliştirme
+- **Backend:** Tauri v2 (Rust)
+- **Embedded server:** Axum on `0.0.0.0:8080`
+- **Database:** SQLite in the app-data directory
+- **Frontend:** React + TypeScript + Vite + Tailwind CSS v4  
+  One `dist` build serves both the Tauri window and LAN browsers.
 
-```bash
-npm install                 # frontend bağımlılıkları
-npm run tauri dev           # masaüstü uygulaması (Vite + Rust hot-reload)
-```
+### API reference (LAN)
 
-Sunucu, uygulama açıldığında otomatik `0.0.0.0:8080` üzerinde başlar ve
-`dist/` klasörünü ağ tarayıcılarına sunar. İlk çalıştırmada `npm run build`
-üretmeden ağ adresi yalnızca API sunar; tam UI için:
-
-```bash
-npm run build               # dist/ üretir (REST tarafı da bu klasörü sunar)
-npm run tauri build         # release paketi
-```
-
-### Yararlı komutlar
-
-| Komut | Açıklama |
+| Endpoint | Description |
 |---|---|
-| `npm run icon` | Mevcut `app-icon.png` kaynağından Tauri ikon setini üretir |
-| `npx tauri icon app-icon.png` | Aynı işlem (doğrudan CLI) |
-| `cargo check` (src-tauri) | Rust tip/hata kontrolü |
-| `cargo clippy` (src-tauri) | Rust lints |
+| `GET /api/status` | Server status, version, auth requirement |
+| `GET /api/library?type=&q=` | Library query |
+| `GET /api/disks` | Mounted disks |
+| `POST /api/scan` | Index a directory |
+| `POST /api/open` | Open a file in an external player |
+| `POST /api/open-batch` | “Play all” via `.m3u8` playlist |
+| `GET /api/music/*` | Artists, albums, tracks |
+| `GET /api/movies/*` · `/api/series/*` | Movie groups & series hierarchy |
+| `GET /api/cover` · `/api/meta` | Artwork and metadata |
 
-## REST API (LAN)
+## Security
 
-| Uç | Açıklama |
-|---|---|
-| `GET /api/status` | Sunucu durumu, sürüm, doğrulama gereksinimi |
-| `GET /api/library?type=movie&q=...` | Kütüphane sorgusu (tür + arama + sayfalama) |
-| `GET /api/disks` | Bağlı diskler |
-| `POST /api/scan` `{ path, disk_label? }` | Dizini tarayıp indeksler |
-| `POST /api/open` `{ file_path, target_app }` | Medyayı harici oynatıcıda başlatır |
-| `GET /api/music/artists?q=` | Sanatçılar (albüm/şarkı sayılarıyla) |
-| `GET /api/music/albums?artist=&q=` | Albümler (sanatçıya göre filtrelenebilir) |
-| `GET /api/music/tracks?album=&artist=` | Bir albümün şarkıları (disk + track sırasına göre) |
-| `GET /api/music/artist-tracks?artist=` | Bir sanatçının tüm şarkıları |
-| `GET /api/cover?album=&artist=` | Albüm kapağı (gömülü/klasör → iTunes fallback) |
-| `GET /api/cover?kind=movie&title=&folder=` | Film posteri (klasör → TMDB → iTunes) |
-| `GET /api/cover?kind=series&title=` | Dizi posteri (TMDB → TVmaze → iTunes) |
-| `GET /api/meta?kind=movie&title=` | Film metadata (özet/yıl/puan/türler/süre: TMDB → iTunes) |
-| `GET /api/meta?kind=series&title=` | Dizi metadata (TMDB → TVmaze) |
-| `GET /api/movies?q=` | Filmler (klasör bazında gruplu: CD1/CD2 tek kart) |
-| `GET /api/movies/files?group=` | Bir film grubunun dosyaları |
-| `GET /api/series/shows?q=` | Diziler (sezon/bölüm sayılarıyla) |
-| `GET /api/series/seasons?show=` | Bir dizinin sezonları |
-| `GET /api/series/episodes?show=&season=` | Bölümler (season opsiyonel) |
-| `POST /api/open-batch` `{ file_paths, target_app, playlist_title }` | "Tümünü Çal" — .m3u8 playlist olarak oynatıcıya ekler |
+- `/api/open` can only launch **indexed** files.
+- `target_app` is whitelist-limited (`system`, `VLC`, `IINA`, `Audirvana`, `foobar2000`, `QuickTime Player`, …).
+- Token auth is **off by default**. Enable it in Settings (⚙); browsers then send `X-Auth-Token` on first visit.
+- Bind is LAN-facing (`0.0.0.0`). Prefer token auth on untrusted networks.
 
-### Güvenlik notları
+## License
 
-- `/api/open` yalnızca **indekste kayıtlı** dosyaları başlatabilir.
-- `target_app` beyaz liste ile sınırlıdır (`system`, `VLC`, `IINA`,
-  `Audirvana`, `foobar2000`, `QuickTime Player`).
-- Token doğrulaması varsayılan olarak **kapalıdır**. Masaüstü uygulamasındaki ⚙
-  Ayarlar panelinden açıp/kapatabilir, token'ı görüntüleyip kopyalayabilir ve
-  yeniden üretebilirsiniz. Açıkken tarayıcıdan ilk girişte token sorulur
-  (`X-Auth-Token` başlığı ile gönderilir).
+[MIT](LICENSE) © Erdem Uslu
 
-## Kullanım
+---
 
-1. Uygulamayı başlatın.
-2. "Dizin yolu" alanına bir medya klasörü girin (örn. `/Volumes/DiskAdi/Filmler`)
-   veya "Gözat…" ile seçin — dosyalar türlerine göre Film/Dizi/Müzik sekmelerine düşer.
-   **Filmler klasör bazında gruplanır:** aynı klasördeki tüm videolar (CD1/CD2
-   gibi) tek kart olur; başlık doğrudan kökteyse dosya adı, değilse klasör
-   adıdır. Aynı adlı altyazılar (`.srt` vb.) kartta "CC" rozeti olarak görünür
-   ve oynatıcı tarafından otomatik yüklenir. `sample`/`trailer`/`teaser`
-   adlı videolar indekslenmez.
-   **Diziler hiyerarşiktir:** dosya adındaki `S01E01` / `2x05` deseninden
-   dizi/sezon/bölüm çıkarılır; Dizi → Sezon → Bölüm şeklinde gezilir, dizi
-   veya sezon "⋯" menüsünden playlist olarak oynatılabilir. Gizli dosyalar
-   (macOS `._*` AppleDouble çöpleri, `.DS_Store`, Windows gizli
-   attribute'luları) indekslenmez; her tarama öncesi indeksten de temizlenir.
-3. Kartlara tıklayın: **filmlerde detay sayfası açılır** (büyük poster,
-   özet, yıl, puan, türler, süre + dosya listesi); "▶ Oynat" düğmesi
-   çoklu dosyalı filmleri playlist olarak sırayla açar, dosya
-   satırlarından tek dosya da çalınabilir. **Dizilerde** dizi ana
-   sayfası aynı zengin başlığı (poster, puan, türler, özet, durum)
-   gösterir.
-4. Müzik sekmesi hiyerarşiktir: Albümler/Sanatçılar → sanatçı → albüm → şarkı
-   listesi. Her kartın "⋯" menüsündeki **Tümünü Çal**, kartın tüm şarkılarını
-   .m3u8 playlist olarak seçili oynatıcıya ekler. Tag'i olmayan dosyalarda
-   sanatçı/albüm bilgisi klasör yapısından (`Sanatçı/Albüm/01 - Sarkı.mp3`)
-   çıkarılır.
-   Albüm kapakları: gömülü kapak (ID3/FLAC) → klasördeki `cover.jpg` →
-   iTunes Search API (key'siz) zinciriyle çözülür; `<app-data>/covers/`
-   altında önbelleklenir. Albüm detayında yıl, tür ve ses kalitesi
-   (örn. "44.1 kHz • 16 bit") gösterilir.
-   Film/dizi posterleri çözümleme zinciri:
-   - **Film:** klasör posteri (`poster.jpg`, Plex tarzı) → **TMDB** (key
-     varsa) → **iTunes** (key'siz `entity=movie`)
-   - **Dizi:** **TMDB** (key varsa) → **TVmaze** (key'siz, yüksek
-     çözünürlük) → **iTunes** (`entity=tvSeason`, key'siz)
-   TMDB key girilmediğinde bile posterler key'siz kaynaklardan gelir; key
-   girilirse en kaliteli kaynak öncelik kazanır. TMDB key: themoviedb.org →
-   Ayarlar → API → API Key v3; ⚙ Ayarlar panelinden girilir ve yalnızca
-   backend'de kullanılır. Tüm posterler `<app-data>/covers/` altında
-   önbelleklenir.
-5. Telefonunuzdan `http://<bilgisayar-ip>:8080` adresini açın — aynı arayüz
-   uzaktan kumanda olarak çalışır.
+[Türkçe README](README.tr.md)

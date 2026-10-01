@@ -1911,6 +1911,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "kura"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "lofty",
+ "md-5",
+ "mime_guess",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tokio",
+ "tokio-util",
+ "tower-http 0.5.2",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
 name = "libappindicator"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1984,29 +2007,6 @@ name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
-
-[[package]]
-name = "local-media-hub"
-version = "0.1.0"
-dependencies = [
- "axum",
- "lofty",
- "md-5",
- "mime_guess",
- "reqwest 0.12.28",
- "rusqlite",
- "rust-embed",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tokio",
- "tokio-util",
- "tower-http 0.5.2",
- "uuid",
- "walkdir",
-]
 
 [[package]]
 name = "lock_api"
