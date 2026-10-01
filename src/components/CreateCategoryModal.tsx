@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Film, FolderOpen, Music, Tv, X } from 'lucide-react';
 import { browseDirectory, isRunningInTauri } from '../api/client';
+import { useLocale } from '../context/LocaleContext';
 import type { CategoryInfo } from './ManageSourcesModal';
 
 interface CreateCategoryModalProps {
@@ -14,6 +15,7 @@ export default function CreateCategoryModal({
   onClose,
   onCreate,
 }: CreateCategoryModalProps) {
+  const { t } = useLocale();
   const [label, setLabel] = useState('');
   const [mediaType, setMediaType] = useState<'movie' | 'series' | 'music'>('movie');
   const [path, setPath] = useState('');
@@ -28,7 +30,6 @@ export default function CreateCategoryModal({
       if (selected) {
         setPath(selected);
         if (!label.trim()) {
-          // Klasör adından menü adı öner
           const folderName = selected.split(/[\\/]/).filter(Boolean).pop();
           if (folderName) setLabel(folderName);
         }
@@ -75,22 +76,20 @@ export default function CreateCategoryModal({
         </button>
 
         <div>
-          <h2 className="font-serif text-2xl font-normal text-primary">Yeni Menü Oluştur</h2>
-          <p className="mt-1 text-xs text-secondary">
-            Arşiviniz için özel bir sekme oluşturun ve ilgili medya klasörünü bağlayın.
-          </p>
+          <h2 className="font-serif text-2xl font-normal text-primary">{t('categories.createTitle')}</h2>
+          <p className="mt-1 text-xs text-secondary">{t('categories.createDesc')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-secondary mb-1.5">
-              Menü Adı
+              {t('categories.nameLabel')}
             </label>
             <input
               type="text"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="Örn: Belgeseller, Animeler, Konserler…"
+              placeholder={t('categories.namePlaceholder')}
               className="w-full rounded-lg bg-surface-hover px-3 py-2 text-sm text-primary ring-1 ring-border placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent"
               autoFocus
             />
@@ -98,7 +97,7 @@ export default function CreateCategoryModal({
 
           <div>
             <label className="block text-xs font-medium text-secondary mb-1.5">
-              İçerik Türü
+              {t('categories.typeLabel')}
             </label>
             <div className="grid grid-cols-3 gap-2">
               <button
@@ -111,7 +110,7 @@ export default function CreateCategoryModal({
                 }`}
               >
                 <Film className="h-5 w-5" />
-                <span>Film</span>
+                <span>{t('categories.movie')}</span>
               </button>
 
               <button
@@ -124,7 +123,7 @@ export default function CreateCategoryModal({
                 }`}
               >
                 <Tv className="h-5 w-5" />
-                <span>Dizi</span>
+                <span>{t('categories.series')}</span>
               </button>
 
               <button
@@ -137,21 +136,21 @@ export default function CreateCategoryModal({
                 }`}
               >
                 <Music className="h-5 w-5" />
-                <span>Müzik</span>
+                <span>{t('categories.music')}</span>
               </button>
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-medium text-secondary mb-1.5">
-              Klasör Yolu (Opsiyonel)
+              {t('categories.pathLabel')}
             </label>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
-                placeholder="/Volumes/Disk/Belgeseller"
+                placeholder="/Volumes/Disk/Documentaries"
                 className="min-w-0 flex-1 rounded-lg bg-surface-hover px-3 py-2 text-sm text-primary ring-1 ring-border placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent"
               />
               {isRunningInTauri() && (
@@ -160,16 +159,14 @@ export default function CreateCategoryModal({
                   onClick={onBrowse}
                   disabled={browsing}
                   className="flex items-center gap-1.5 shrink-0 rounded-lg bg-surface-active px-3 py-2 text-xs font-medium text-primary ring-1 ring-border hover:bg-border transition disabled:opacity-50"
-                  title="Klasör seç"
+                  title={t('common.browseTitle')}
                 >
                   <FolderOpen className="h-4 w-4 text-accent" />
-                  <span>{browsing ? '…' : 'Gözat'}</span>
+                  <span>{browsing ? '…' : t('common.browse')}</span>
                 </button>
               )}
             </div>
-            <p className="mt-1 text-[11px] text-tertiary">
-              Klasörü şimdi veya menüyü oluşturduktan sonra ekleyebilirsiniz.
-            </p>
+            <p className="mt-1 text-[11px] text-tertiary">{t('categories.pathHint')}</p>
           </div>
 
           <div className="flex justify-end gap-2.5 pt-2">
@@ -178,14 +175,14 @@ export default function CreateCategoryModal({
               onClick={onClose}
               className="rounded-lg px-3.5 py-2 text-xs font-medium text-secondary hover:text-primary transition"
             >
-              İptal
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={!label.trim()}
               className="rounded-lg bg-accent px-4 py-2 text-xs font-medium text-background transition hover:bg-accent-hover disabled:opacity-50"
             >
-              Menüyü Oluştur
+              {t('categories.createSubmit')}
             </button>
           </div>
         </form>

@@ -11,6 +11,7 @@ import {
   type MediaItem,
 } from '../api/client';
 import { useAudioPlayer } from '../context/AudioPlayerContext';
+import { useLocale } from '../context/LocaleContext';
 import { useAlbums, useAlbumTracks, useArtists } from '../hooks/useMedia';
 import { formatDuration, formatQuality } from '../lib/format';
 import { matchesCategoryPath } from '../lib/path';
@@ -45,6 +46,7 @@ export default function MusicView({
   categoryLabel,
   categoryPaths,
 }: MusicViewProps) {
+  const { t } = useLocale();
   const [level, setLevel] = useState<Level>({ kind: 'top', view: 'albums' });
   const [batchLabel, setBatchLabel] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
@@ -106,7 +108,7 @@ export default function MusicView({
     try {
       const list = await fetchTracks();
       if (list.length === 0) {
-        setFeedback({ success: false, message: `"${label}" için çalınacak parça bulunamadı` });
+        setFeedback({ success: false, message: t('music.noTracks', { label }) });
         return;
       }
       if (player === 'in_app') {
@@ -117,7 +119,7 @@ export default function MusicView({
         return;
       }
       const result = await launchPlayerBatch(
-        list.map((t) => t.file_path),
+        list.map((track) => track.file_path),
         player,
         label,
       );
@@ -137,10 +139,10 @@ export default function MusicView({
         {level.kind === 'top' ? (
           <div>
             <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-primary">
-              {categoryLabel || 'Müzik'}
+              {categoryLabel || t('music.title')}
             </h1>
             <p className="mt-1 text-xs text-tertiary font-mono">
-              {displayedAlbums.length} albüm · {displayedArtists.length} sanatçı
+              {t('music.summary', { a: displayedAlbums.length, r: displayedArtists.length })}
             </p>
           </div>
         ) : (
@@ -155,7 +157,7 @@ export default function MusicView({
               }
               className="hover:text-primary transition"
             >
-              {categoryLabel || 'Müzik'}
+              {categoryLabel || t('music.title')}
             </button>
             {level.kind === 'artist' && (
               <>
@@ -165,7 +167,7 @@ export default function MusicView({
                   onClick={() => setLevel({ kind: 'top', view: 'artists' })}
                   className="hover:text-primary transition"
                 >
-                  Sanatçılar
+                  {t('music.artists')}
                 </button>
                 <span>›</span>
                 <span className="font-medium text-primary">{level.artist}</span>
@@ -202,7 +204,7 @@ export default function MusicView({
                       : 'text-tertiary hover:text-secondary'
                   }`}
                 >
-                  {v === 'albums' ? 'Albümler' : 'Sanatçılar'}
+                  {v === 'albums' ? t('music.albums') : t('music.artists')}
                 </button>
               ))}
             </div>
@@ -214,10 +216,10 @@ export default function MusicView({
                 type="button"
                 onClick={onManageSources}
                 className="flex items-center gap-1.5 rounded-lg bg-surface-hover px-3 py-1.5 text-xs font-medium text-secondary hover:text-primary ring-1 ring-border transition"
-                title="Bağlı klasörleri yönet veya kaldır"
+                title={t('sources.manageTitle')}
               >
                 <SlidersHorizontal className="h-3.5 w-3.5 text-accent" />
-                <span>Kaynakları Düzenle</span>
+                <span>{t('sources.manage')}</span>
               </button>
             ) : (
               onOpenScanModal && (
@@ -227,7 +229,7 @@ export default function MusicView({
                   className="flex items-center gap-1.5 rounded-lg bg-surface-hover px-3 py-1.5 text-xs font-medium text-secondary hover:text-primary ring-1 ring-border transition"
                 >
                   <Plus className="h-3.5 w-3.5 text-accent" />
-                  <span>Kaynak ekle</span>
+                  <span>{t('sources.add')}</span>
                 </button>
               )
             ))}
@@ -248,8 +250,8 @@ export default function MusicView({
               {level.artist}
             </h1>
             <p className="mt-1 text-xs font-mono text-tertiary">
-              {displayedAlbums.length} albüm
-              {artistTrackCount > 0 ? ` · ${artistTrackCount} parça` : ''}
+              {t('music.albumCount', { n: displayedAlbums.length })}
+              {artistTrackCount > 0 ? ` · ${t('music.trackCount', { n: artistTrackCount })}` : ''}
               {artistDuration > 0 ? ` · ${formatDuration(artistDuration)}` : ''}
             </p>
           </div>
@@ -261,7 +263,7 @@ export default function MusicView({
             disabled={batchLabel !== null || displayedAlbums.length === 0}
             className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-background transition hover:bg-accent-hover disabled:opacity-50"
           >
-            {batchLabel === level.artist ? 'Ekleniyor…' : '▶ Tümünü Çal'}
+            {batchLabel === level.artist ? t('music.adding') : t('music.playAll')}
           </button>
         </div>
       )}
@@ -270,15 +272,15 @@ export default function MusicView({
       {level.kind === 'top' && level.view === 'albums' &&
         (albums.isLoading ? (
           <div className="py-24 text-center text-xs text-tertiary font-serif">
-            Kütüphane taranıyor…
+            {t('music.scanning')}
           </div>
         ) : displayedAlbums.length === 0 ? (
           <div className="py-24 text-center space-y-3">
-            <p className="font-serif text-2xl text-secondary font-normal">Kayıtlı albüm bulunamadı</p>
+            <p className="font-serif text-2xl text-secondary font-normal">{t('music.emptyAlbums')}</p>
             <p className="text-xs text-tertiary max-w-sm mx-auto">
               {hasSources
-                ? 'Bu menüye bağlı klasörlerde müzik formatında dosya bulunamadı.'
-                : 'Dizin tarayıcı ile müzik klasörünüzü ekleyerek çalmaya başlayabilirsiniz.'}
+                ? t('music.emptyWithSources')
+                : t('music.emptyNoSources')}
             </p>
             {hasSources ? (
               <button
@@ -287,7 +289,7 @@ export default function MusicView({
                 className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-background hover:bg-accent-hover transition"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
-                <span>Kaynakları Düzenle</span>
+                <span>{t('sources.manage')}</span>
               </button>
             ) : (
               onOpenScanModal && (
@@ -297,7 +299,7 @@ export default function MusicView({
                   className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-background hover:bg-accent-hover transition"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  <span>İlk Kaynağınızı Ekleyin</span>
+                  <span>{t('sources.addFirst')}</span>
                 </button>
               )
             )}
@@ -314,9 +316,9 @@ export default function MusicView({
               return (
                 <MediaCard
                   key={`${a.artist}::${a.album}`}
-                  title={a.album || 'Bilinmeyen Albüm'}
-                  subtitle={a.artist || 'Bilinmeyen Sanatçı'}
-                  meta={`${a.track_count} şarkı${
+                  title={a.album || t('common.unknownAlbum')}
+                  subtitle={a.artist || t('common.unknownArtist')}
+                  meta={`${t('music.songCount', { n: a.track_count })}${
                     a.total_duration ? ` · ${formatDuration(a.total_duration)}` : ''
                   }`}
                   coverUrl={coverUrl(a.album, a.artist)}
@@ -337,28 +339,28 @@ export default function MusicView({
       {level.kind === 'artist' &&
         (albums.isLoading ? (
           <div className="py-24 text-center text-xs text-tertiary font-serif">
-            Albümler yükleniyor…
+            {t('music.loadingAlbums')}
           </div>
         ) : albums.isError ? (
           <div className="py-24 text-center space-y-3">
-            <p className="font-serif text-xl text-status-offline">Albümler yüklenirken bir sorun oluştu</p>
+            <p className="font-serif text-xl text-status-offline">{t('music.albumsError')}</p>
             <button
               type="button"
               onClick={() => albums.refetch()}
               className="rounded-lg bg-surface-hover px-4 py-2 text-xs font-medium text-secondary hover:text-primary ring-1 ring-border transition"
             >
-              Yeniden Dene
+              {t('common.retry')}
             </button>
           </div>
         ) : displayedAlbums.length === 0 ? (
           <div className="py-24 text-center space-y-3">
-            <p className="font-serif text-2xl text-secondary font-normal">Bu sanatçıya ait albüm bulunamadı</p>
+            <p className="font-serif text-2xl text-secondary font-normal">{t('music.noArtistAlbums')}</p>
             <button
               type="button"
               onClick={() => setLevel({ kind: 'top', view: 'artists' })}
               className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-background hover:bg-accent-hover transition"
             >
-              Sanatçılara Dön
+              {t('music.backToArtists')}
             </button>
           </div>
         ) : (
@@ -373,9 +375,9 @@ export default function MusicView({
               return (
                 <MediaCard
                   key={`${a.artist}::${a.album}`}
-                  title={a.album || 'Bilinmeyen Albüm'}
-                  subtitle={a.artist || 'Bilinmeyen Sanatçı'}
-                  meta={`${a.track_count} şarkı${
+                  title={a.album || t('common.unknownAlbum')}
+                  subtitle={a.artist || t('common.unknownArtist')}
+                  meta={`${t('music.songCount', { n: a.track_count })}${
                     a.total_duration ? ` · ${formatDuration(a.total_duration)}` : ''
                   }`}
                   coverUrl={coverUrl(a.album, a.artist)}
@@ -396,18 +398,18 @@ export default function MusicView({
       {level.kind === 'top' && level.view === 'artists' &&
         (artists.isLoading ? (
           <div className="py-24 text-center text-xs text-tertiary font-serif">
-            Yükleniyor…
+            {t('common.loading')}
           </div>
         ) : displayedArtists.length === 0 ? (
-          <p className="py-24 text-center text-xs text-tertiary">Kayıtlı sanatçı yok.</p>
+          <p className="py-24 text-center text-xs text-tertiary">{t('music.noArtists')}</p>
         ) : (
           <div className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
             {displayedArtists.map((a: ArtistSummary) => (
               <MediaCard
                 key={a.artist}
-                title={a.artist || 'Bilinmeyen Sanatçı'}
-                subtitle={`${a.album_count} albüm`}
-                meta={`${a.track_count} parça`}
+                title={a.artist || t('common.unknownArtist')}
+                subtitle={t('music.albumCount', { n: a.album_count })}
+                meta={t('music.trackCount', { n: a.track_count })}
                 aspect="1:1"
                 onClick={() => setLevel({ kind: 'artist', artist: a.artist })}
               />
@@ -451,7 +453,7 @@ export default function MusicView({
                   disabled={batchLabel !== null || !tracks.data || tracks.data.length === 0}
                   className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-background transition hover:bg-accent-hover disabled:opacity-50"
                 >
-                  {batchLabel ? 'Ekleniyor…' : '▶ Tümünü Çal'}
+                  {batchLabel ? t('music.adding') : t('music.playAll')}
                 </button>
               </div>
 
@@ -459,13 +461,13 @@ export default function MusicView({
                 {(() => {
                   const first = tracks.data?.[0];
                   const total = (tracks.data ?? []).reduce(
-                    (sum, t) => sum + (t.duration ?? 0),
+                    (sum, track) => sum + (track.duration ?? 0),
                     0,
                   );
                   const parts = [
                     first?.year ? String(first.year) : null,
                     first?.genre ?? null,
-                    tracks.data ? `${tracks.data.length} şarkı` : null,
+                    tracks.data ? t('music.songCount', { n: tracks.data.length }) : null,
                     total > 0 ? formatDuration(total) : null,
                   ].filter(Boolean);
                   return parts.length > 0 ? <span>{parts.join(' • ')}</span> : null;
@@ -477,21 +479,21 @@ export default function MusicView({
           {/* Parça Tablosu */}
           <div className="overflow-hidden rounded-xl bg-surface ring-1 ring-border">
             {tracks.isLoading ? (
-              <p className="px-4 py-6 text-xs text-tertiary">Yükleniyor…</p>
+              <p className="px-4 py-6 text-xs text-tertiary">{t('common.loading')}</p>
             ) : (
               <div className="divide-y divide-border/40">
-                {tracks.data?.map((t, i) => {
+                {tracks.data?.map((track, i) => {
                   const isCurrentInApp =
-                    player === 'in_app' && currentTrack?.file_path === t.file_path;
-                  const isPlayingRow = isCurrentInApp || playingPath === t.file_path;
-                  const q = formatQuality(t);
+                    player === 'in_app' && currentTrack?.file_path === track.file_path;
+                  const isPlayingRow = isCurrentInApp || playingPath === track.file_path;
+                  const q = formatQuality(track);
 
                   return (
                     <button
-                      key={t.id}
+                      key={track.id}
                       type="button"
-                      onClick={() => playSingle(t)}
-                      title={t.file_path}
+                      onClick={() => playSingle(track)}
+                      title={track.file_path}
                       className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-xs transition hover:bg-surface-hover ${
                         isPlayingRow ? 'bg-accent/10 text-accent font-medium' : 'text-primary'
                       }`}
@@ -502,7 +504,7 @@ export default function MusicView({
                             {isPlaying ? '▶' : '⏸'}
                           </span>
                         ) : (
-                          t.track_number ?? i + 1
+                          track.track_number ?? i + 1
                         )}
                       </span>
                       <div className="min-w-0 flex-1 flex flex-col justify-center">
@@ -511,11 +513,11 @@ export default function MusicView({
                             isCurrentInApp ? 'font-semibold text-accent' : 'text-primary'
                           }`}
                         >
-                          {t.title}
+                          {track.title}
                         </span>
-                        {t.artist && t.artist !== level.artist && (
+                        {track.artist && track.artist !== level.artist && (
                           <span className="truncate text-[11px] text-secondary">
-                            {t.artist}
+                            {track.artist}
                           </span>
                         )}
                       </div>
@@ -524,13 +526,13 @@ export default function MusicView({
                           {q}
                         </span>
                       )}
-                      {t.year && (
+                      {track.year && (
                         <span className="hidden shrink-0 text-xs text-tertiary sm:inline font-mono">
-                          {t.year}
+                          {track.year}
                         </span>
                       )}
                       <span className="w-12 shrink-0 text-right font-mono text-[11px] text-tertiary">
-                        {formatDuration(t.duration)}
+                        {formatDuration(track.duration)}
                       </span>
                     </button>
                   );

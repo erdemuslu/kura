@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLocale } from '../context/LocaleContext';
 import { Loader2, Play } from 'lucide-react';
 
 export type CardAspect = '1:1' | '2:3';
@@ -41,6 +42,7 @@ export default function MediaCard({
   playHoverLoading = false,
   menuActions,
 }: MediaCardProps) {
+  const { t } = useLocale();
   const [imgError, setImgError] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -138,7 +140,7 @@ export default function MediaCard({
               type="button"
               onClick={() => setMenuOpen(!menuOpen)}
               className="flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-secondary backdrop-blur-md hover:text-primary transition"
-              title="Seçenekler"
+              title={t('common.options')}
             >
               ⋯
             </button>

@@ -30,25 +30,27 @@ import {
   type RemoteInfo,
 } from './api/client';
 import { AudioPlayerProvider, useAudioPlayer } from './context/AudioPlayerContext';
+import { useLocale } from './context/LocaleContext';
+import { categoryDisplayLabel } from './i18n';
 import { resetScrollTop } from './lib/scroll';
 import { useDisks, useScan } from './hooks/useMedia';
 
 const DEFAULT_CATEGORIES: CategoryInfo[] = [
   {
     id: 'movie',
-    label: 'Film',
+    label: 'Movies',
     mediaType: 'movie',
     paths: ["/Volumes/Erdem'sDisk/Sinema"],
   },
   {
     id: 'series',
-    label: 'Dizi',
+    label: 'Series',
     mediaType: 'series',
     paths: ["/Volumes/Erdem'sDisk/Dizi"],
   },
   {
     id: 'music',
-    label: 'Müzik',
+    label: 'Music',
     mediaType: 'music',
     paths: ["/Volumes/Erdem'sDisk/Müzik"],
   },
@@ -60,6 +62,7 @@ interface ScanProgress {
 }
 
 function MainLayout() {
+  const { t } = useLocale();
   const [categories, setCategories] = useState<CategoryInfo[]>(() => {
     try {
       const saved = localStorage.getItem('kura-categories');
@@ -186,12 +189,15 @@ function MainLayout() {
   useEffect(() => {
     if (scan.data) {
       setScanToast(
-        `${scan.data.indexed} dosya indekslendi (${scan.data.scanned_files} tarandı)`
+        t('scan.toastDone', {
+          n: scan.data.indexed,
+          m: scan.data.scanned_files,
+        }),
       );
       const timer = setTimeout(() => setScanToast(null), 4000);
       return () => clearTimeout(timer);
     }
-  }, [scan.data]);
+  }, [scan.data, t]);
 
   // Global Klavye Kısayolları (Space, Oklar, M, Q, Cmd+K)
   useEffect(() => {
@@ -314,25 +320,26 @@ function MainLayout() {
         <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between px-4 sm:px-8 lg:px-12">
           {/* Sol: Logo + (Masaüstü) Sekmeler */}
           <div className="flex items-center gap-4 md:gap-8">
-            {/* Marka: Kura (蔵) + Mühür + Alt Başlık */}
+            {/* Marka: PNG ikon + CSS yazı */}
             <div
-              className="flex items-center gap-2.5 select-none cursor-default group/brand"
-              title="Kura (蔵) — Kişisel Medya Arşivi"
+              className="flex items-center gap-2.5 select-none"
+              title={t('common.brandTitle')}
             >
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/15 text-accent ring-1 ring-accent/30 transition-transform group-hover/brand:scale-105 shadow-sm">
-                <span className="text-[12px] font-serif font-medium leading-none select-none">
-                  蔵
-                </span>
-              </div>
-              <div className="flex flex-col justify-center">
+              <img
+                src="/brand/kura-mark.png"
+                alt=""
+                className="h-7 w-7 shrink-0 object-contain pointer-events-none"
+                draggable={false}
+              />
+              <div className="flex h-7 flex-col justify-center gap-[3px]">
                 <div className="flex items-center gap-1.5 leading-none">
-                  <span className="font-serif text-[17px] font-normal tracking-tight text-primary">
-                    Kura
+                  <span className="font-serif text-[15px] font-normal tracking-tight text-primary leading-none">
+                    {t('common.brand')}
                   </span>
-                  <span className="h-1 w-1 rounded-full bg-accent/80" />
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-accent/80" />
                 </div>
-                <span className="text-[9.5px] font-mono tracking-widest uppercase text-tertiary mt-0.5 hidden sm:inline">
-                  Medya Arşivi
+                <span className="hidden text-[9px] font-mono tracking-widest uppercase text-tertiary leading-none sm:block">
+                  {t('common.brandTagline')}
                 </span>
               </div>
             </div>
@@ -352,7 +359,7 @@ function MainLayout() {
                         : 'text-tertiary hover:text-secondary'
                     }`}
                   >
-                    {c.label}
+                    {categoryDisplayLabel(c, t)}
                     {isActive && (
                       <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-accent" />
                     )}
@@ -363,10 +370,10 @@ function MainLayout() {
                 type="button"
                 onClick={() => setShowCreateCategory(true)}
                 className="flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-tertiary hover:text-primary hover:bg-surface-hover transition-colors ml-1"
-                title="Yeni Menü / Kategori Ekle"
+                title={t('nav.newMenuCategory')}
               >
                 <Plus className="h-3 w-3" />
-                <span>Yeni Menü</span>
+                <span>{t('nav.newMenu')}</span>
               </button>
             </nav>
           </div>
@@ -381,7 +388,7 @@ function MainLayout() {
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Ara…"
+                placeholder={t('common.search')}
                 className="h-8 w-44 sm:w-52 rounded-lg bg-surface-hover/80 pl-8 pr-11 text-xs text-primary ring-1 ring-border/80 placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-accent/70 focus:bg-surface-hover transition-colors duration-150"
               />
               <kbd className="absolute right-2 hidden sm:inline-flex h-4 items-center rounded border border-border/70 px-1 font-mono text-[9px] text-tertiary pointer-events-none">
@@ -401,7 +408,7 @@ function MainLayout() {
                 className={`relative flex h-8 w-8 items-center justify-center rounded-lg text-secondary transition hover:bg-surface-hover hover:text-primary ${
                   showDisksPopover ? 'bg-surface-hover text-primary' : ''
                 }`}
-                title="Diskler"
+                title={t('nav.disks')}
               >
                 <HardDrive className="h-4 w-4" />
                 <span
@@ -430,7 +437,7 @@ function MainLayout() {
                 className={`relative flex h-8 w-8 items-center justify-center rounded-lg text-secondary transition hover:bg-surface-hover hover:text-primary ${
                   showRemotePopover ? 'bg-surface-hover text-primary' : ''
                 }`}
-                title="Uzaktan Kumanda"
+                title={t('nav.remote')}
               >
                 <Radio className="h-4 w-4" />
                 {remote && (
@@ -451,7 +458,7 @@ function MainLayout() {
                 type="button"
                 onClick={() => setShowSettings(true)}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-secondary hover:bg-surface-hover hover:text-primary transition"
-                title="Ayarlar"
+                title={t('common.settings')}
               >
                 <Settings className="h-4 w-4" />
               </button>
@@ -466,7 +473,7 @@ function MainLayout() {
               className={`relative flex h-9 w-9 items-center justify-center rounded-lg transition ${
                 showMobileSearch || query ? 'bg-accent/15 text-accent' : 'text-secondary hover:bg-surface-hover'
               }`}
-              title="Arama Yap"
+              title={t('common.searchTitle')}
             >
               <Search className="h-4 w-4" />
               {query && (
@@ -480,7 +487,7 @@ function MainLayout() {
               className={`flex h-9 w-9 items-center justify-center rounded-lg transition ${
                 showMobileMenu ? 'bg-surface-hover text-primary' : 'text-secondary hover:bg-surface-hover'
               }`}
-              title="Mobil Menü"
+              title={t('nav.mobileMenu')}
             >
               {showMobileMenu ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
@@ -505,7 +512,7 @@ function MainLayout() {
                     : 'bg-surface-hover/80 text-secondary hover:text-primary ring-1 ring-border/50'
                 }`}
               >
-                {c.label}
+                {categoryDisplayLabel(c, t)}
               </button>
             );
           })}
@@ -521,7 +528,7 @@ function MainLayout() {
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Film, dizi veya müzik ara…"
+                placeholder={t('common.searchPlaceholder')}
                 className="h-9 w-full rounded-xl bg-surface-hover pl-9 pr-8 text-xs text-primary ring-1 ring-border/80 placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-accent"
               />
               {query && (
@@ -549,7 +556,7 @@ function MainLayout() {
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-secondary hover:text-primary hover:bg-surface-hover transition"
             >
               <Plus className="h-4 w-4 text-accent" />
-              <span>Yeni Menü / Kategori Ekle</span>
+              <span>{t('nav.newMenuCategory')}</span>
             </button>
             <button
               type="button"
@@ -560,7 +567,7 @@ function MainLayout() {
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-secondary hover:text-primary hover:bg-surface-hover transition"
             >
               <HardDrive className="h-4 w-4 text-accent" />
-              <span className="flex-1 text-left">Diskler & Depolama</span>
+              <span className="flex-1 text-left">{t('nav.disksStorage')}</span>
               <span
                 className={`h-2 w-2 rounded-full ${
                   isOnlineDiskAvailable ? 'bg-status-online' : 'bg-status-offline'
@@ -576,7 +583,7 @@ function MainLayout() {
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-secondary hover:text-primary hover:bg-surface-hover transition"
             >
               <Radio className="h-4 w-4 text-accent" />
-              <span className="flex-1 text-left">Uzaktan Kumanda Bilgisi</span>
+              <span className="flex-1 text-left">{t('nav.remoteInfo')}</span>
               {remote && (
                 <span className="h-2 w-2 rounded-full bg-status-online" />
               )}
@@ -591,7 +598,7 @@ function MainLayout() {
                 className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-secondary hover:text-primary hover:bg-surface-hover transition"
               >
                 <Settings className="h-4 w-4 text-accent" />
-                <span>Ayarlar</span>
+                <span>{t('common.settings')}</span>
               </button>
             )}
           </div>
@@ -601,7 +608,11 @@ function MainLayout() {
         {scan.isPending && (
           <div
             className="absolute bottom-0 left-0 right-0 h-[2px] overflow-hidden bg-surface-hover"
-            title={scanProgress ? `Taranıyor: ${scanProgress.scanned_files} dosya` : 'Taranıyor…'}
+            title={
+              scanProgress
+                ? t('scan.titleProgress', { n: scanProgress.scanned_files })
+                : t('scan.scanning')
+            }
           >
             <div className="h-full w-1/3 animate-[pulse_1s_ease-in-out_infinite] bg-accent" />
           </div>
@@ -613,7 +624,8 @@ function MainLayout() {
         <div className="fixed bottom-24 right-6 z-50 rounded-lg bg-surface px-4 py-2.5 text-xs text-primary shadow-2xl ring-1 ring-border animate-in fade-in duration-200">
           <p className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-accent animate-ping" />
-            {scanToast || `Taranıyor… ${scanProgress?.scanned_files ?? 0} dosya tarandı`}
+            {scanToast ||
+              t('scan.toastProgress', { n: scanProgress?.scanned_files ?? 0 })}
           </p>
         </div>
       )}
@@ -627,17 +639,15 @@ function MainLayout() {
         {authError && (
           <section className="rounded-xl bg-accent/10 p-4 text-xs text-accent ring-1 ring-accent/30 flex items-center justify-between gap-4">
             <div>
-              <p className="font-semibold">Uzaktan erişim token’ı gerekli.</p>
-              <p className="mt-0.5 text-secondary">
-                Masaüstü uygulamasında “Uzaktan kumanda” bölümünde gösterilen token’ı girin.
-              </p>
+              <p className="font-semibold">{t('remote.authRequiredPeriod')}</p>
+              <p className="mt-0.5 text-secondary">{t('remote.authHint')}</p>
             </div>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={tokenInput}
                 onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="Token"
+                placeholder={t('common.token')}
                 className="rounded-lg bg-surface px-3 py-1.5 text-xs ring-1 ring-border focus:outline-none focus:ring-1 focus:ring-accent"
               />
               <button
@@ -648,7 +658,7 @@ function MainLayout() {
                 }}
                 className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-background hover:bg-accent-hover transition"
               >
-                Kaydet
+                {t('common.save')}
               </button>
             </div>
           </section>
@@ -665,7 +675,7 @@ function MainLayout() {
             onOpenScanModal={() => handleOpenScanForCategory(activeCategory)}
             hasSources={activeCategory.paths.length > 0}
             onManageSources={() => setShowManageSources(true)}
-            categoryLabel={activeCategory.label}
+            categoryLabel={categoryDisplayLabel(activeCategory, t)}
             categoryPaths={activeCategory.paths}
           />
         )}
@@ -680,7 +690,7 @@ function MainLayout() {
             onOpenScanModal={() => handleOpenScanForCategory(activeCategory)}
             hasSources={activeCategory.paths.length > 0}
             onManageSources={() => setShowManageSources(true)}
-            categoryLabel={activeCategory.label}
+            categoryLabel={categoryDisplayLabel(activeCategory, t)}
             categoryPaths={activeCategory.paths}
           />
         )}
@@ -694,7 +704,7 @@ function MainLayout() {
             onOpenScanModal={() => handleOpenScanForCategory(activeCategory)}
             hasSources={activeCategory.paths.length > 0}
             onManageSources={() => setShowManageSources(true)}
-            categoryLabel={activeCategory.label}
+            categoryLabel={categoryDisplayLabel(activeCategory, t)}
             categoryPaths={activeCategory.paths}
           />
         )}
@@ -709,7 +719,11 @@ function MainLayout() {
           setScanTargetCat(null);
         }}
         initialPath={scanInitialPath}
-        targetCategoryLabel={scanTargetCat?.label || activeCategory.label}
+        targetCategoryLabel={
+          scanTargetCat
+            ? categoryDisplayLabel(scanTargetCat, t)
+            : categoryDisplayLabel(activeCategory, t)
+        }
         scanProgress={scanProgress}
         onScanStarted={(path) => {
           queryClient.invalidateQueries();

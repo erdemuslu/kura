@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { HardDrive, X } from 'lucide-react';
 import type { DiskInfo } from '../api/client';
+import { useLocale } from '../context/LocaleContext';
 
 interface DisksPopoverProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface DisksPopoverProps {
 }
 
 export default function DisksPopover({ isOpen, onClose, disks, triggerRef }: DisksPopoverProps) {
+  const { t } = useLocale();
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,7 +40,7 @@ export default function DisksPopover({ isOpen, onClose, disks, triggerRef }: Dis
       <div className="flex items-center justify-between pb-2.5 border-b border-border">
         <div className="flex items-center gap-2">
           <HardDrive className="h-4 w-4 text-accent" />
-          <span className="text-xs font-semibold text-primary">Bağlı Diskler</span>
+          <span className="text-xs font-semibold text-primary">{t('disks.title')}</span>
         </div>
         <button
           type="button"
@@ -51,9 +53,7 @@ export default function DisksPopover({ isOpen, onClose, disks, triggerRef }: Dis
 
       <div className="mt-2.5 space-y-2 max-h-60 overflow-y-auto">
         {disks.length === 0 ? (
-          <p className="py-3 text-center text-xs text-tertiary">
-            Bağlı disk bulunamadı
-          </p>
+          <p className="py-3 text-center text-xs text-tertiary">{t('disks.empty')}</p>
         ) : (
           disks.map((d) => (
             <div
@@ -71,10 +71,10 @@ export default function DisksPopover({ isOpen, onClose, disks, triggerRef }: Dis
                   className={`h-2 w-2 rounded-full ${
                     d.online ? 'bg-status-online' : 'bg-status-offline'
                   }`}
-                  title={d.online ? 'Bağlı (Çevrimiçi)' : 'Çevrimdışı'}
+                  title={d.online ? t('disks.online') : t('disks.offline')}
                 />
                 <span className="text-[10px] text-secondary">
-                  {d.online ? 'Aktif' : 'Yok'}
+                  {d.online ? t('disks.active') : t('disks.missing')}
                 </span>
               </div>
             </div>

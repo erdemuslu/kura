@@ -24,6 +24,7 @@ import {
   type LyricsResult,
   type MediaItem,
 } from '../api/client';
+import { useLocale } from '../context/LocaleContext';
 import { formatDuration, formatSize, getAudioQualityInfo } from '../lib/format';
 
 interface NowPlayingModalProps {
@@ -194,6 +195,7 @@ export default function NowPlayingModal({
   onPlayTrack,
   onRemoveFromQueue,
 }: NowPlayingModalProps) {
+  const { t } = useLocale();
   const [activeTab, setActiveTab] = useState<TabType>('queue');
   const [idleLevel, setIdleLevel] = useState<IdleLevel>('active');
   const [showRemainingTime, setShowRemainingTime] = useState(true);
@@ -580,7 +582,7 @@ export default function NowPlayingModal({
           type="button"
           onClick={onClose}
           className="flex h-10 w-10 items-center justify-center rounded-full text-secondary hover:text-primary hover:bg-white/[0.06] transition"
-          title="Küçült (Esc)"
+          title={t('player.minimizeEsc')}
         >
           <ChevronDown className="h-6 w-6 stroke-[1.5]" />
         </button>
@@ -595,9 +597,9 @@ export default function NowPlayingModal({
                 ? 'bg-white/[0.1] text-white'
                 : 'text-tertiary hover:text-white hover:bg-white/[0.05]'
             }`}
-            title="Sıradaki (Q)"
+            title={t('player.upNextKey')}
           >
-            <span>Sıradaki</span>
+            <span>{t('player.upNext')}</span>
             {upcomingQueue.length > 0 && (
               <span className="font-mono text-[10px] opacity-60">
                 {upcomingQueue.length}
@@ -614,9 +616,9 @@ export default function NowPlayingModal({
                   ? 'bg-white/[0.1] text-white'
                   : 'text-tertiary hover:text-white hover:bg-white/[0.05]'
               }`}
-              title="Sözler (L)"
+              title={t('player.lyricsKey')}
             >
-              <span>Sözler</span>
+              <span>{t('player.lyrics')}</span>
             </button>
           )}
 
@@ -624,7 +626,7 @@ export default function NowPlayingModal({
             type="button"
             onClick={toggleFullscreen}
             className="flex h-9 w-9 items-center justify-center rounded-full text-secondary hover:text-primary hover:bg-white/[0.06] transition"
-            title={isFullscreen ? 'Tam Ekrandan Çık (F)' : 'Tam Ekran (F)'}
+            title={isFullscreen ? t('player.exitFullscreen') : t('player.fullscreen')}
           >
             {isFullscreen ? (
               <Minimize2 className="h-4 w-4 stroke-[1.5]" />
@@ -642,7 +644,7 @@ export default function NowPlayingModal({
           <div className="flex justify-center items-center">
             <div
               onClick={() => setActiveTab('album')}
-              title="Albüme git"
+              title={t('player.goToAlbum')}
               style={{
                 boxShadow: isPlaying
                   ? `0 2px 4px rgba(0, 0, 0, 0.3), 0 24px 48px -12px rgba(0, 0, 0, 0.5), 0 60px 120px -40px ${accent.glow}`
@@ -676,14 +678,14 @@ export default function NowPlayingModal({
             >
               {/* Üst Etiket */}
               <div className="flex items-center gap-1.5 text-[11px] font-mono tracking-[0.14em] uppercase text-white/40 w-full">
-                <span>Şimdi Çalıyor</span>
+                <span>{t('player.nowPlaying')}</span>
                 <span>·</span>
                 <button
                   type="button"
                   onClick={() => setActiveTab('album')}
                   className="truncate hover:text-white transition-colors max-w-[220px] sm:max-w-none"
                 >
-                  {track.album || 'Tekli / Bilinmeyen'}
+                  {track.album || t('music.singleUnknown')}
                 </button>
               </div>
 
@@ -705,7 +707,7 @@ export default function NowPlayingModal({
                   onClick={() => setActiveTab('album')}
                   className="text-[clamp(15px,2vw,20px)] text-white/70 font-sans hover:text-white transition-colors truncate max-w-full"
                 >
-                  {track.artist || 'Bilinmeyen Sanatçı'}
+                  {track.artist || t('common.unknownArtist')}
                 </button>
 
                 {(track.year || track.disk_label) && (
@@ -769,7 +771,7 @@ export default function NowPlayingModal({
                   type="button"
                   onClick={() => setShowRemainingTime(!showRemainingTime)}
                   className="w-12 text-right font-mono text-xs text-white/40 tabular-nums hover:text-white/80 transition-colors"
-                  title="Kalan / Toplam Süre Değiştir"
+                  title={t('player.toggleRemaining')}
                 >
                   {showRemainingTime
                     ? `−${formatDuration(Math.floor(remainingTime))}`
@@ -788,7 +790,7 @@ export default function NowPlayingModal({
                       ? 'text-[var(--accent-color)]'
                       : 'text-white/50 hover:text-white'
                   }`}
-                  title="Karıştır (S)"
+                  title={t('player.shuffleKey')}
                 >
                   <Shuffle className="h-[21px] w-[21px] stroke-[1.5]" />
                   {isShuffle && (
@@ -804,7 +806,7 @@ export default function NowPlayingModal({
                   type="button"
                   onClick={onPrev}
                   className="p-2.5 text-white/70 hover:text-white transition active:scale-95"
-                  title="Önceki (⇧←)"
+                  title={t('player.previousShift')}
                 >
                   <SkipBack className="h-[22px] w-[22px] stroke-[1.5]" />
                 </button>
@@ -818,7 +820,7 @@ export default function NowPlayingModal({
                     color: '#171514',
                   }}
                   className="flex h-16 w-16 items-center justify-center rounded-full shadow-2xl hover:scale-[1.04] active:scale-[0.96] transition-transform"
-                  title={isPlaying ? 'Duraklat (Boşluk)' : 'Oynat (Boşluk)'}
+                  title={isPlaying ? t('player.pauseSpace') : t('player.playSpace')}
                 >
                   {isPlaying ? (
                     <Pause className="h-7 w-7 fill-current stroke-0" />
@@ -832,7 +834,7 @@ export default function NowPlayingModal({
                   type="button"
                   onClick={onNext}
                   className="p-2.5 text-white/70 hover:text-white transition active:scale-95"
-                  title="Sonraki (⇧→)"
+                  title={t('player.nextShift')}
                 >
                   <SkipForward className="h-[22px] w-[22px] stroke-[1.5]" />
                 </button>
@@ -846,7 +848,7 @@ export default function NowPlayingModal({
                       ? 'text-[var(--accent-color)]'
                       : 'text-white/50 hover:text-white'
                   }`}
-                  title="Tekrarla (R)"
+                  title={t('player.repeatKey')}
                 >
                   {repeatMode === 'one' ? (
                     <Repeat1 className="h-[21px] w-[21px] stroke-[1.5]" />
@@ -876,7 +878,7 @@ export default function NowPlayingModal({
                       : 'text-white/40 hover:text-white/75'
                   }`}
                 >
-                  <span>Sıradaki</span>
+                  <span>{t('player.upNext')}</span>
                   {activeTab === 'queue' && (
                     <span
                       className="absolute bottom-0 left-0 right-0 h-[1.5px]"
@@ -894,7 +896,7 @@ export default function NowPlayingModal({
                       : 'text-white/40 hover:text-white/75'
                   }`}
                 >
-                  <span>Albüm</span>
+                  <span>{t('player.album')}</span>
                   {activeTab === 'album' && (
                     <span
                       className="absolute bottom-0 left-0 right-0 h-[1.5px]"
@@ -913,7 +915,7 @@ export default function NowPlayingModal({
                         : 'text-white/40 hover:text-white/75'
                     }`}
                   >
-                    <span>Sözler</span>
+                    <span>{t('player.lyrics')}</span>
                     {activeTab === 'lyrics' && (
                       <span
                         className="absolute bottom-0 left-0 right-0 h-[1.5px]"
@@ -932,7 +934,7 @@ export default function NowPlayingModal({
                       : 'text-white/40 hover:text-white/75'
                   }`}
                 >
-                  <span>Bilgi</span>
+                  <span>{t('player.info')}</span>
                   {activeTab === 'info' && (
                     <span
                       className="absolute bottom-0 left-0 right-0 h-[1.5px]"
@@ -980,7 +982,7 @@ export default function NowPlayingModal({
                                   onRemoveFromQueue(actualIdx);
                                 }}
                                 className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-white transition"
-                                title="Kaldır"
+                                title={t('player.remove')}
                               >
                                 <X className="h-3.5 w-3.5" />
                               </button>
@@ -990,7 +992,7 @@ export default function NowPlayingModal({
                       })
                     ) : (
                       <div className="flex h-32 items-center justify-center text-xs font-mono text-white/40">
-                        Sonra: Otomatik devam — {track.artist || 'Sanatçı'}
+                        {t('music.queueAutoContinue', { artist: track.artist || t('music.artistFallback') })}
                         {track.album ? `, ${track.album}` : ''}
                       </div>
                     )}
@@ -1081,7 +1083,7 @@ export default function NowPlayingModal({
                       </div>
                     ) : (
                       <div className="flex h-32 items-center justify-center text-xs text-white/40">
-                        Şarkı sözü bulunamadı
+                        {t('music.lyricsNotFound')}
                       </div>
                     )}
                   </div>
@@ -1091,14 +1093,14 @@ export default function NowPlayingModal({
                 {activeTab === 'info' && (
                   <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-xs pt-1">
                     <div>
-                      <span className="font-mono text-[11px] text-white/40">Format</span>
+                      <span className="font-mono text-[11px] text-white/40">{t('player.metaFormat')}</span>
                       <p className="font-mono text-white/90 mt-0.5">
                         {track.format.toUpperCase()}
                       </p>
                     </div>
 
                     <div>
-                      <span className="font-mono text-[11px] text-white/40">Çözünürlük</span>
+                      <span className="font-mono text-[11px] text-white/40">{t('player.metaResolution')}</span>
                       <p className="font-mono text-white/90 mt-0.5">
                         {quality.bitDepthStr || (track.bit_depth ? `${track.bit_depth}-bit` : '16-bit')} /{' '}
                         {quality.sampleRateStr || (track.sample_rate ? `${Math.round(track.sample_rate / 100) / 10} kHz` : '44.1 kHz')}
@@ -1106,7 +1108,7 @@ export default function NowPlayingModal({
                     </div>
 
                     <div>
-                      <span className="font-mono text-[11px] text-white/40">Bitrate</span>
+                      <span className="font-mono text-[11px] text-white/40">{t('player.metaBitrate')}</span>
                       <p className="font-mono text-white/90 mt-0.5">
                         {quality.bitrateStr ||
                           (track.duration
@@ -1116,21 +1118,21 @@ export default function NowPlayingModal({
                     </div>
 
                     <div>
-                      <span className="font-mono text-[11px] text-white/40">Boyut</span>
+                      <span className="font-mono text-[11px] text-white/40">{t('player.metaSize')}</span>
                       <p className="font-mono text-white/90 mt-0.5">
                         {formatSize(track.file_size)}
                       </p>
                     </div>
 
                     <div>
-                      <span className="font-mono text-[11px] text-white/40">Kaynak</span>
+                      <span className="font-mono text-[11px] text-white/40">{t('player.metaSource')}</span>
                       <p className="font-mono text-white/90 mt-0.5">
-                        {track.disk_label || 'Yerel Arşiv'}
+                        {track.disk_label || t('player.localArchive')}
                       </p>
                     </div>
 
                     <div>
-                      <span className="font-mono text-[11px] text-white/40">Kanal</span>
+                      <span className="font-mono text-[11px] text-white/40">{t('player.metaChannel')}</span>
                       <p className="font-mono text-white/90 mt-0.5">
                         {track.channels === 1 ? 'Mono' : 'Stereo (2ch)'}
                       </p>
@@ -1138,7 +1140,7 @@ export default function NowPlayingModal({
 
                     <div className="col-span-2 pt-2 border-t border-white/[0.06]">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-[11px] text-white/40">Yol</span>
+                        <span className="font-mono text-[11px] text-white/40">{t('player.metaPath')}</span>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
@@ -1150,7 +1152,7 @@ export default function NowPlayingModal({
                             className="flex items-center gap-1 text-[11px] font-mono text-secondary hover:text-white transition"
                           >
                             <Copy className="h-3 w-3" />
-                            <span>{copiedPath ? 'Kopyalandı' : 'Kopyala'}</span>
+                            <span>{copiedPath ? t('common.copied') : t('common.copy')}</span>
                           </button>
                           <button
                             type="button"
@@ -1158,7 +1160,7 @@ export default function NowPlayingModal({
                             className="flex items-center gap-1 text-[11px] font-mono text-secondary hover:text-white transition"
                           >
                             <FolderOpen className="h-3 w-3" />
-                            <span>Finder'da Göster</span>
+                            <span>{t('player.showInFinder')}</span>
                           </button>
                         </div>
                       </div>
@@ -1185,7 +1187,7 @@ export default function NowPlayingModal({
             <span
               className="h-1.5 w-1.5 rounded-full shadow"
               style={{ backgroundColor: accent.accent }}
-              title="Kayıpsız Yüksek Çözünürlüklü Ses (Hi-Res)"
+              title={t('player.hiResFull')}
             />
           )}
           <span>
@@ -1199,7 +1201,7 @@ export default function NowPlayingModal({
         <div
           onWheel={handleVolumeWheel}
           className="flex items-center gap-2.5"
-          title="Ses Düzeyi (Fare tekerleği veya ↑/↓ ile ayarlanabilir)"
+          title={t('player.volumeHint')}
         >
           <button
             type="button"

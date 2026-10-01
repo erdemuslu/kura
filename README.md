@@ -51,8 +51,8 @@ npm run tauri build         # release paketi
 
 | Komut | Açıklama |
 |---|---|
-| `npm run icon` | `app-icon.png` kaynak ikonu yeniden üretir |
-| `npx tauri icon app-icon.png` | Tauri ikon setini (`src-tauri/icons/`) üretir |
+| `npm run icon` | Mevcut `app-icon.png` kaynağından Tauri ikon setini üretir |
+| `npx tauri icon app-icon.png` | Aynı işlem (doğrudan CLI) |
 | `cargo check` (src-tauri) | Rust tip/hata kontrolü |
 | `cargo clippy` (src-tauri) | Rust lints |
 

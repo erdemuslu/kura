@@ -1,4 +1,5 @@
 import { AUDIO_PLAYERS, VIDEO_PLAYERS } from '../api/client';
+import { useLocale } from '../context/LocaleContext';
 
 interface PlayerSelectProps {
   value: string;
@@ -8,11 +9,12 @@ interface PlayerSelectProps {
 
 /** Hedef oynatıcı seçici (medya türüne göre uygun oynatıcı listesi). */
 export default function PlayerSelect({ value, kind = 'audio', onChange }: PlayerSelectProps) {
+  const { t } = useLocale();
   const options = kind === 'video' ? VIDEO_PLAYERS : AUDIO_PLAYERS;
 
   return (
     <label className="flex items-center gap-2 text-sm text-slate-300">
-      <span className="hidden shrink-0 sm:inline">Oynatıcı</span>
+      <span className="hidden shrink-0 sm:inline">{t('players.label')}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -20,7 +22,7 @@ export default function PlayerSelect({ value, kind = 'audio', onChange }: Player
       >
         {options.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.label}
+            {p.labelKey ? t(p.labelKey) : p.label}
           </option>
         ))}
       </select>

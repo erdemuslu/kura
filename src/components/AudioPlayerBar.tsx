@@ -14,10 +14,12 @@ import {
 } from 'lucide-react';
 import { coverUrl } from '../api/client';
 import { useAudioPlayer } from '../context/AudioPlayerContext';
+import { useLocale } from '../context/LocaleContext';
 import { formatDuration, formatSize, getAudioQualityInfo } from '../lib/format';
 import NowPlayingModal from './NowPlayingModal';
 
 export default function AudioPlayerBar() {
+  const { t } = useLocale();
   const {
     currentTrack,
     queue,
@@ -134,7 +136,7 @@ export default function AudioPlayerBar() {
         >
           <header className="flex items-center justify-between border-b border-border px-4 py-3.5">
             <div className="flex items-center gap-2">
-              <span className="font-serif text-base font-normal text-primary">Çalma Sırası</span>
+              <span className="font-serif text-base font-normal text-primary">{t('player.queue')}</span>
               <span className="rounded-full bg-surface-hover px-2 py-0.5 text-xs text-secondary font-mono">
                 {queue.length}
               </span>
@@ -146,7 +148,7 @@ export default function AudioPlayerBar() {
                   onClick={clearQueue}
                   className="text-xs text-tertiary hover:text-status-offline transition"
                 >
-                  Temizle
+                  {t('player.clearQueue')}
                 </button>
               )}
               <button
@@ -186,7 +188,7 @@ export default function AudioPlayerBar() {
                         {track.title}
                       </p>
                       <p className="truncate text-[11px] text-tertiary">
-                        {track.artist || 'Bilinmeyen Sanatçı'}
+                        {track.artist || t('common.unknownArtist')}
                       </p>
                     </div>
                     <span className="font-mono text-[11px] text-tertiary shrink-0">
@@ -196,7 +198,7 @@ export default function AudioPlayerBar() {
                   <button
                     type="button"
                     onClick={() => removeFromQueue(i)}
-                    title="Kuyruktan Çıkar"
+                    title={t('player.removeFromQueue')}
                     className="opacity-0 group-hover:opacity-100 text-tertiary hover:text-status-offline p-1 transition"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -250,7 +252,7 @@ export default function AudioPlayerBar() {
           <div
             className="flex min-w-0 flex-1 md:flex-initial md:w-1/3 items-center gap-2.5 sm:gap-3 cursor-pointer select-none pr-2"
             onClick={() => setIsNowPlayingOpen(true)}
-            title="Şimdi Çalıyor görünümünü aç"
+            title={t('player.openNowPlaying')}
           >
             <div className="relative h-11 w-11 sm:h-12 sm:w-12 shrink-0 overflow-hidden rounded-[6px] bg-surface-hover ring-1 ring-border shadow transition hover:opacity-90 active:scale-95">
               <img
@@ -270,7 +272,7 @@ export default function AudioPlayerBar() {
                 {currentTrack.title}
               </p>
               <p className="truncate text-[11px] text-secondary hover:text-primary transition-colors">
-                {currentTrack.artist || 'Bilinmeyen Sanatçı'}
+                {currentTrack.artist || t('common.unknownArtist')}
                 {currentTrack.album ? (
                   <span className="hidden sm:inline text-tertiary"> — {currentTrack.album}</span>
                 ) : null}
@@ -283,7 +285,7 @@ export default function AudioPlayerBar() {
             <button
               type="button"
               onClick={toggleShuffle}
-              title={isShuffle ? 'Karıştırma: Açık' : 'Karıştırma: Kapalı'}
+              title={isShuffle ? t('player.shuffleOn') : t('player.shuffleOff')}
               className={`relative p-1.5 transition ${
                 isShuffle ? 'text-accent' : 'text-tertiary hover:text-primary'
               }`}
@@ -296,7 +298,7 @@ export default function AudioPlayerBar() {
             <button
               type="button"
               onClick={prevTrack}
-              title="Önceki"
+              title={t('player.previous')}
               className="p-1.5 text-secondary hover:text-primary transition active:scale-95"
             >
               <SkipBack className="h-5 w-5" />
@@ -304,7 +306,7 @@ export default function AudioPlayerBar() {
             <button
               type="button"
               onClick={togglePlay}
-              title={isPlaying ? 'Duraklat' : 'Oynat'}
+              title={isPlaying ? t('player.pause') : t('player.play')}
               className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-background shadow-md hover:scale-105 active:scale-95 transition-all"
             >
               {isPlaying ? (
@@ -316,7 +318,7 @@ export default function AudioPlayerBar() {
             <button
               type="button"
               onClick={nextTrack}
-              title="Sonraki"
+              title={t('player.next')}
               className="p-1.5 text-secondary hover:text-primary transition active:scale-95"
             >
               <SkipForward className="h-5 w-5" />
@@ -326,10 +328,10 @@ export default function AudioPlayerBar() {
               onClick={toggleRepeat}
               title={
                 repeatMode === 'off'
-                  ? 'Tekrar: Kapalı'
+                  ? t('player.repeatOff')
                   : repeatMode === 'all'
-                  ? 'Tekrar: Tüm Kuyruk'
-                  : 'Tekrar: Aynı Parça'
+                  ? t('player.repeatAll')
+                  : t('player.repeatOne')
               }
               className={`relative p-1.5 transition ${
                 repeatMode !== 'off' ? 'text-accent' : 'text-tertiary hover:text-primary'
@@ -353,7 +355,7 @@ export default function AudioPlayerBar() {
               <button
                 type="button"
                 onClick={prevTrack}
-                title="Önceki"
+                title={t('player.previous')}
                 className="p-2 text-secondary hover:text-primary active:scale-95 transition"
               >
                 <SkipBack className="h-4 w-4" />
@@ -361,7 +363,7 @@ export default function AudioPlayerBar() {
               <button
                 type="button"
                 onClick={togglePlay}
-                title={isPlaying ? 'Duraklat' : 'Oynat'}
+                title={isPlaying ? t('player.pause') : t('player.play')}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-background shadow active:scale-95 transition"
               >
                 {isPlaying ? (
@@ -373,7 +375,7 @@ export default function AudioPlayerBar() {
               <button
                 type="button"
                 onClick={nextTrack}
-                title="Sonraki"
+                title={t('player.next')}
                 className="p-2 text-secondary hover:text-primary active:scale-95 transition"
               >
                 <SkipForward className="h-4 w-4" />
@@ -390,7 +392,7 @@ export default function AudioPlayerBar() {
             <div className="group/fmt relative hidden lg:flex items-center gap-1.5 shrink-0">
               <span className="flex items-center gap-1 rounded bg-surface-hover px-2 py-0.5 font-mono text-[10px] text-secondary ring-1 ring-border cursor-help">
                 {quality.isHiRes && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-accent" title="Hi-Res Audio" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent" title={t('player.hiResTitle')} />
                 )}
                 <span>{compactFormat}</span>
               </span>
@@ -409,7 +411,7 @@ export default function AudioPlayerBar() {
               <button
                 type="button"
                 onClick={toggleMute}
-                title={isMuted ? 'Sesi Aç' : 'Sessiz'}
+                title={isMuted ? t('player.unmute') : t('player.mute')}
                 className="text-tertiary hover:text-primary transition p-1"
               >
                 {isMuted || volume === 0 ? (
@@ -434,7 +436,7 @@ export default function AudioPlayerBar() {
               ref={queueToggleBtnRef}
               type="button"
               onClick={() => setIsQueueOpen(!isQueueOpen)}
-              title="Çalma Sırası"
+              title={t('player.queue')}
               className={`rounded-lg p-2 text-xs transition ${
                 isQueueOpen
                   ? 'bg-accent text-background'

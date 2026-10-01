@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, ExternalLink, Radio, Shield, X } from 'lucide-react';
 import type { RemoteInfo } from '../api/client';
+import { useLocale } from '../context/LocaleContext';
 
 interface RemotePopoverProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface RemotePopoverProps {
 }
 
 export default function RemotePopover({ isOpen, onClose, remote, triggerRef }: RemotePopoverProps) {
+  const { t } = useLocale();
   const popoverRef = useRef<HTMLDivElement>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
@@ -61,7 +63,7 @@ export default function RemotePopover({ isOpen, onClose, remote, triggerRef }: R
       <div className="flex items-center justify-between pb-2.5 border-b border-border">
         <div className="flex items-center gap-2">
           <Radio className="h-4 w-4 text-accent" />
-          <span className="text-xs font-semibold text-primary">Uzaktan Kumanda</span>
+          <span className="text-xs font-semibold text-primary">{t('nav.remote')}</span>
         </div>
         <button
           type="button"
@@ -74,14 +76,14 @@ export default function RemotePopover({ isOpen, onClose, remote, triggerRef }: R
 
       <div className="mt-3 space-y-3">
         <div>
-          <p className="text-[11px] text-tertiary mb-1">Ağ Bağlantı Adresi (Telefon / TV)</p>
+          <p className="text-[11px] text-tertiary mb-1">{t('remote.networkAddress')}</p>
           <div className="flex items-center justify-between gap-2 rounded-lg bg-surface-hover p-2">
             <span className="font-mono text-xs text-primary truncate">{url}</span>
             <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 onClick={copyUrl}
-                title="Adresi kopyala"
+                title={t('remote.copyUrl')}
                 className="rounded p-1 text-secondary hover:text-primary transition"
               >
                 {copiedUrl ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
@@ -90,7 +92,7 @@ export default function RemotePopover({ isOpen, onClose, remote, triggerRef }: R
                 href={url}
                 target="_blank"
                 rel="noreferrer"
-                title="Tarayıcıda aç"
+                title={t('remote.openInBrowser')}
                 className="rounded p-1 text-secondary hover:text-primary transition"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -103,10 +105,10 @@ export default function RemotePopover({ isOpen, onClose, remote, triggerRef }: R
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-secondary">
               <Shield className="h-3.5 w-3.5 text-tertiary" />
-              Erişim Güvenliği
+              {t('remote.security')}
             </span>
             <span className="text-[10px] text-tertiary font-mono">
-              {remote?.auth_enabled ? 'Token Zorunlu' : 'Açık'}
+              {remote?.auth_enabled ? t('remote.tokenRequired') : t('common.off')}
             </span>
           </div>
           {remote?.auth_enabled && (
@@ -119,15 +121,13 @@ export default function RemotePopover({ isOpen, onClose, remote, triggerRef }: R
                 onClick={copyToken}
                 className="text-[10px] text-accent hover:underline shrink-0"
               >
-                {copiedToken ? 'Kopyalandı' : 'Kopyala'}
+                {copiedToken ? t('common.copied') : t('common.copy')}
               </button>
             </div>
           )}
         </div>
 
-        <p className="text-[11px] leading-relaxed text-tertiary">
-          Aynı Wi-Fi ağına bağlı herhangi bir cihazın tarayıcısından bu adrese girerek kütüphanenizi yönetebilirsiniz.
-        </p>
+        <p className="text-[11px] leading-relaxed text-tertiary">{t('remote.help')}</p>
       </div>
     </div>
   );

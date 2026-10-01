@@ -13,6 +13,7 @@ import { useMeta, useMovieFiles, useMovies } from '../hooks/useMedia';
 import { formatSize } from '../lib/format';
 import { matchesCategoryPath } from '../lib/path';
 import { resetScrollTop } from '../lib/scroll';
+import { useLocale } from '../context/LocaleContext';
 import MediaCard from './MediaCard';
 import type { VideoPlayerItem } from './VideoPlayerModal';
 
@@ -41,6 +42,7 @@ export default function MoviesView({
   categoryLabel,
   categoryPaths,
 }: MoviesViewProps) {
+  const { t } = useLocale();
   const movies = useMovies(query);
   const [detail, setDetail] = useState<MovieGroup | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
@@ -71,7 +73,7 @@ export default function MoviesView({
           : await getMovieFiles(group.folder_path);
 
       if (files.length === 0) {
-        setFeedback({ success: false, message: 'Film dosyaları bulunamadı' });
+        setFeedback({ success: false, message: t('movies.filesNotFound') });
         return;
       }
 
@@ -139,7 +141,7 @@ export default function MoviesView({
     if (meta?.runtime) {
       const h = Math.floor(meta.runtime / 60);
       const m = meta.runtime % 60;
-      badges.push(h > 0 ? `${h}s ${m}dk` : `${m}dk`);
+      badges.push(h > 0 ? t('movies.runtimeHm', { h, m }) : t('movies.runtimeM', { m }));
     }
 
     return (
@@ -150,7 +152,7 @@ export default function MoviesView({
             onClick={() => setDetail(null)}
             className="hover:text-primary transition"
           >
-            Filmler
+            {t('movies.title')}
           </button>
           <span>›</span>
           <span className="font-medium text-primary">{detail.title}</span>
@@ -210,7 +212,7 @@ export default function MoviesView({
             )}
 
             <p className="text-xs text-tertiary">
-              {detail.file_count} dosya • {formatSize(detail.total_size)}
+              {t('movies.fileCount', { n: detail.file_count })} • {formatSize(detail.total_size)}
               {detail.has_subtitles ? ' • CC' : ''}
               {detail.disk_label ? ` • ${detail.disk_label}` : ''}
             </p>
@@ -229,8 +231,10 @@ export default function MoviesView({
                 className="rounded-lg bg-accent px-5 py-2 text-xs font-semibold text-background transition hover:bg-accent-hover disabled:opacity-50"
               >
                 {playing === detail.title
-                  ? 'Açılıyor…'
-                  : `▶ Oynat${detail.file_count > 1 ? ' (Tümü)' : ''}`}
+                  ? t('movies.opening')
+                  : detail.file_count > 1
+                    ? t('movies.playAll')
+                    : t('movies.play')}
               </button>
             </div>
           </div>
@@ -240,11 +244,11 @@ export default function MoviesView({
         <section className="overflow-hidden rounded-xl bg-surface ring-1 ring-border">
           <header className="border-b border-border px-4 py-2.5">
             <span className="text-xs font-semibold uppercase tracking-wider text-tertiary">
-              Dosyalar ({files.length})
+              {t('movies.files', { n: files.length })}
             </span>
           </header>
           {detailFiles.isLoading ? (
-            <p className="px-4 py-6 text-xs text-tertiary">Yükleniyor…</p>
+            <p className="px-4 py-6 text-xs text-tertiary">{t('common.loading')}</p>
           ) : (
             <div className="divide-y divide-border/40">
               {files.map((f) => {
@@ -288,10 +292,10 @@ export default function MoviesView({
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border/40 pb-4 min-h-[72px]">
         <div>
           <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-primary">
-            {categoryLabel || 'Filmler'}
+            {categoryLabel || t('movies.title')}
           </h1>
           <p className="mt-1 text-xs text-tertiary font-mono">
-            {displayedMovies.length} film
+            {t('movies.count', { n: displayedMovies.length })}
             {totalSize > 0 ? ` · ${formatSize(totalSize)}` : ''}
           </p>
         </div>
@@ -302,10 +306,10 @@ export default function MoviesView({
               type="button"
               onClick={onManageSources}
               className="flex items-center gap-1.5 rounded-lg bg-surface-hover px-3 py-1.5 text-xs font-medium text-secondary hover:text-primary ring-1 ring-border transition"
-              title="Bağlı klasörleri yönet veya kaldır"
+              title={t('sources.manageTitle')}
             >
               <SlidersHorizontal className="h-3.5 w-3.5 text-accent" />
-              <span>Kaynakları Düzenle</span>
+              <span>{t('sources.manage')}</span>
             </button>
           ) : (
             onOpenScanModal && (
@@ -315,7 +319,7 @@ export default function MoviesView({
                 className="flex items-center gap-1.5 rounded-lg bg-surface-hover px-3 py-1.5 text-xs font-medium text-secondary hover:text-primary ring-1 ring-border transition"
               >
                 <Plus className="h-3.5 w-3.5 text-accent" />
-                <span>Kaynak ekle</span>
+                <span>{t('sources.add')}</span>
               </button>
             )
           )}
@@ -324,15 +328,15 @@ export default function MoviesView({
 
       {movies.isLoading ? (
         <div className="py-24 text-center text-xs text-tertiary font-serif">
-          Kütüphane taranıyor…
+          {t('movies.scanning')}
         </div>
       ) : displayedMovies.length === 0 ? (
         <div className="py-24 text-center space-y-3">
-          <p className="font-serif text-2xl text-secondary font-normal">Kayıtlı film bulunamadı</p>
+          <p className="font-serif text-2xl text-secondary font-normal">{t('movies.emptyTitle')}</p>
           <p className="text-xs text-tertiary max-w-sm mx-auto">
             {hasSources
-              ? 'Bu menüye bağlı klasörlerde film formatında dosya bulunamadı.'
-              : 'Dizin tarayıcı ile film klasörünüzü ekleyerek koleksiyonunuzu buraya getirebilirsiniz.'}
+              ? t('movies.emptyWithSources')
+              : t('movies.emptyNoSources')}
           </p>
           {hasSources ? (
             <button
@@ -341,7 +345,7 @@ export default function MoviesView({
               className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-background hover:bg-accent-hover transition"
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              <span>Kaynakları Düzenle</span>
+              <span>{t('sources.manage')}</span>
             </button>
           ) : (
             onOpenScanModal && (
@@ -351,7 +355,7 @@ export default function MoviesView({
                 className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-background hover:bg-accent-hover transition"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span>İlk Kaynağınızı Ekleyin</span>
+                <span>{t('sources.addFirst')}</span>
               </button>
             )
           )}
@@ -361,7 +365,7 @@ export default function MoviesView({
           {displayedMovies.map((m) => {
             const badges: string[] = [];
             if (m.has_subtitles) badges.push('CC');
-            if (m.file_count > 1) badges.push(`${m.file_count} dosya`);
+            if (m.file_count > 1) badges.push(t('movies.fileCount', { n: m.file_count }));
             badges.push(formatSize(m.total_size));
 
             return (

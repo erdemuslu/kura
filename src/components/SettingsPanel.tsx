@@ -31,6 +31,8 @@ import {
   type LastFmStatus,
   type RemoteInfo,
 } from '../api/client';
+import { useLocale } from '../context/LocaleContext';
+import type { Locale } from '../i18n';
 
 type SettingsTab = 'appearance' | 'players' | 'remote' | 'tmdb' | 'lastfm';
 
@@ -57,6 +59,7 @@ export default function SettingsPanel({
   onAuthChange,
   onTokenChange,
 }: SettingsPanelProps) {
+  const { t, locale, setLocale } = useLocale();
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -109,11 +112,9 @@ export default function SettingsPanel({
       const res = await startLastFmAuth();
       setLastFmPendingToken(res.token);
       setLastFmAuthUrl(res.url);
-      setLastFmFeedback(
-        'Tarayıcınızda onay sayfası açıldı. Hesabınızla onay verdikten sonra "Yetkilendirmeyi Tamamla" butonuna tıklayın.',
-      );
+      setLastFmFeedback(t('lastfm.authStarted'));
     } catch (e: any) {
-      setLastFmFeedback(e?.message || 'Yetkilendirme başlatılamadı');
+      setLastFmFeedback(e?.message || t('lastfm.authStartFailed'));
     } finally {
       setLastFmLoading(false);
     }
@@ -127,14 +128,11 @@ export default function SettingsPanel({
       const username = await completeLastFmAuth(lastFmPendingToken);
       setLastFmPendingToken(null);
       setLastFmAuthUrl(null);
-      setLastFmFeedback(`Harika! @${username} hesabı başarıyla bağlandı.`);
+      setLastFmFeedback(t('lastfm.connected', { username }));
       const updated = await getLastFmStatus();
       setLastFmStatus(updated);
     } catch (e: any) {
-      setLastFmFeedback(
-        e?.message ||
-          'Yetkilendirme henüz tamamlanmadı. Lütfen tarayıcıda izin verdiğinizden emin olun.',
-      );
+      setLastFmFeedback(e?.message || t('lastfm.authIncomplete'));
     } finally {
       setLastFmLoading(false);
     }
@@ -146,11 +144,11 @@ export default function SettingsPanel({
       await disconnectLastFm();
       setLastFmPendingToken(null);
       setLastFmAuthUrl(null);
-      setLastFmFeedback('Last.fm bağlantısı kesildi.');
+      setLastFmFeedback(t('lastfm.disconnected'));
       const updated = await getLastFmStatus();
       setLastFmStatus(updated);
     } catch (e: any) {
-      setLastFmFeedback(e?.message || 'Bağlantı kesilemedi');
+      setLastFmFeedback(e?.message || t('lastfm.disconnectFailed'));
     } finally {
       setLastFmLoading(false);
     }
@@ -184,7 +182,7 @@ export default function SettingsPanel({
       await setTmdbApiKey(tmdbKeyInput);
       const saved = await getTmdbApiKey();
       setTmdbSaved(saved);
-      setTmdbFeedback(saved ? 'TMDB API anahtarı başarıyla kaydedildi' : 'Anahtar temizlendi');
+      setTmdbFeedback(saved ? t('tmdb.saved') : t('tmdb.cleared'));
       setTimeout(() => setTmdbFeedback(null), 3000);
     } catch (e) {
       setError(String(e));
@@ -226,16 +224,29 @@ export default function SettingsPanel({
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      setError('Token kopyalanamadı');
+      setError(t('remote.copyFailed'));
     }
   };
 
-  const TABS = [
-    { id: 'appearance' as const, label: 'Arayüz & Ölçek', icon: Monitor },
-    { id: 'players' as const, label: 'Oynatıcılar', icon: PlaySquare },
-    { id: 'remote' as const, label: 'Uzaktan Kumanda', icon: Radio },
-    { id: 'tmdb' as const, label: 'Afişler & TMDB', icon: Film },
-    { id: 'lastfm' as const, label: 'Last.fm Scrobbler', icon: Music },
+  const SETTINGS_TABS = [
+    { id: 'appearance' as const, label: t('settings.tabAppearance'), icon: Monitor },
+    { id: 'players' as const, label: t('settings.tabPlayers'), icon: PlaySquare },
+    { id: 'remote' as const, label: t('settings.tabRemote'), icon: Radio },
+    { id: 'tmdb' as const, label: t('settings.tabTmdb'), icon: Film },
+    { id: 'lastfm' as const, label: t('settings.tabLastfm'), icon: Music },
+  ];
+
+  const scalePresets = [
+    { label: t('settings.scalePreset85'), val: 85 },
+    { label: t('settings.scalePreset100'), val: 100 },
+    { label: t('settings.scalePreset115'), val: 115 },
+    { label: t('settings.scalePreset125'), val: 125 },
+    { label: t('settings.scalePreset140'), val: 140 },
+  ];
+
+  const langOptions: { id: Locale; label: string }[] = [
+    { id: 'en', label: t('settings.languageEn') },
+    { id: 'tr', label: t('settings.languageTr') },
   ];
 
   return (
@@ -244,17 +255,15 @@ export default function SettingsPanel({
         className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-surface p-7 sm:p-8 shadow-2xl ring-1 ring-border relative animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Kapat Butonu */}
         <button
           type="button"
           onClick={onClose}
           className="absolute right-6 top-6 rounded-lg p-2 text-tertiary hover:text-primary hover:bg-surface-hover transition"
-          title="Kapat (Esc)"
+          title={t('common.closeEsc')}
         >
           <X className="h-5 w-5" />
         </button>
 
-        {/* Modal Başlığı */}
         <div className="flex items-center gap-3.5">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 text-accent ring-1 ring-accent/30 shadow-sm shrink-0">
             <span className="text-[15px] font-serif font-medium leading-none select-none">
@@ -264,28 +273,25 @@ export default function SettingsPanel({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-serif text-2xl font-normal text-primary tracking-tight">
-                Ayarlar
+                {t('common.settings')}
               </h2>
               <span className="rounded-md bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent tracking-wider uppercase font-medium">
-                Kura · Medya Arşivi
+                {t('common.brandBadge')}
               </span>
             </div>
-            <p className="mt-0.5 text-xs text-secondary">
-              Arayüz görünümü, varsayılan oynatıcılar ve servis tercihleri.
-            </p>
+            <p className="mt-0.5 text-xs text-secondary">{t('settings.subtitle')}</p>
           </div>
         </div>
 
-        {/* Sekme Navigasyonu */}
         <div className="flex flex-wrap border-b border-border mt-6 gap-2 sm:gap-3">
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const isActive = activeTab === t.id;
+          {SETTINGS_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
             return (
               <button
-                key={t.id}
+                key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(t.id)}
+                onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium border-b-2 transition -mb-px ${
                   isActive
                     ? 'border-accent text-primary font-semibold'
@@ -293,26 +299,49 @@ export default function SettingsPanel({
                 }`}
               >
                 <Icon className={`h-4 w-4 ${isActive ? 'text-accent' : 'text-tertiary'}`} />
-                <span>{t.label}</span>
+                <span>{tab.label}</span>
               </button>
             );
           })}
         </div>
 
-        {/* Sekme İçerik Alanı */}
         <div className="flex-1 overflow-y-auto py-6 space-y-6 pr-1">
-          {/* 1. SEKME: ARAYÜZ & EKRAN ÖLÇEĞİ */}
           {activeTab === 'appearance' && (
             <div className="space-y-6 animate-in fade-in duration-150">
+              {/* Language */}
+              <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-primary">
+                    {t('settings.languageTitle')}
+                  </h3>
+                  <p className="text-xs text-secondary mt-0.5">{t('settings.languageDesc')}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {langOptions.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setLocale(opt.id)}
+                      className={`rounded-xl px-4 py-2.5 text-xs font-medium transition ${
+                        locale === opt.id
+                          ? 'bg-accent text-background font-semibold shadow-md ring-2 ring-accent/40'
+                          : 'bg-surface text-secondary hover:text-primary hover:bg-border ring-1 ring-border'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Scale */}
               <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="text-sm font-semibold text-primary">
-                      Ekran Ölçeklendirme
+                      {t('settings.scaleTitle')}
                     </h3>
-                    <p className="text-xs text-secondary mt-0.5">
-                      4K ve yüksek çözünürlüklü ekranlar için tüm arayüzü orantılı büyütün.
-                    </p>
+                    <p className="text-xs text-secondary mt-0.5">{t('settings.scaleDesc')}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-lg bg-accent/15 px-3 py-1 font-mono text-xs font-bold text-accent">
@@ -324,21 +353,14 @@ export default function SettingsPanel({
                         onClick={() => applyScale(100)}
                         className="rounded-lg bg-surface px-2.5 py-1 text-[11px] text-tertiary hover:text-accent ring-1 ring-border transition"
                       >
-                        Sıfırla
+                        {t('common.reset')}
                       </button>
                     )}
                   </div>
                 </div>
 
-                {/* Hızlı Ön Ayarlar */}
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {[
-                    { label: '%85 Kompakt', val: 85 },
-                    { label: '%100 Standart', val: 100 },
-                    { label: '%115 Orta', val: 115 },
-                    { label: '%125 (4K Önerilen)', val: 125 },
-                    { label: '%140 Büyük / TV', val: 140 },
-                  ].map((preset) => (
+                  {scalePresets.map((preset) => (
                     <button
                       key={preset.val}
                       type="button"
@@ -354,14 +376,13 @@ export default function SettingsPanel({
                   ))}
                 </div>
 
-                {/* İnce Ayar Kaydırıcı & Stepper */}
                 <div className="flex items-center gap-3 pt-2">
                   <button
                     type="button"
                     onClick={() => applyScale(scale - 5)}
                     disabled={scale <= 75}
                     className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface text-secondary hover:text-primary hover:bg-surface-active ring-1 ring-border transition disabled:opacity-30"
-                    title="5% Küçült"
+                    title={t('settings.scaleZoomOut')}
                   >
                     <ZoomOut className="h-4 w-4" />
                   </button>
@@ -379,7 +400,7 @@ export default function SettingsPanel({
                     onClick={() => applyScale(scale + 5)}
                     disabled={scale >= 160}
                     className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface text-secondary hover:text-primary hover:bg-surface-active ring-1 ring-border transition disabled:opacity-30"
-                    title="5% Büyüt"
+                    title={t('settings.scaleZoomIn')}
                   >
                     <ZoomIn className="h-4 w-4" />
                   </button>
@@ -387,34 +408,25 @@ export default function SettingsPanel({
               </div>
 
               <div className="rounded-xl border border-border/60 bg-surface-hover/30 p-4 text-xs text-tertiary space-y-1">
-                <p className="font-medium text-secondary">İpucu:</p>
-                <p>
-                  Ölçek değiştirildiğinde kart görselleri, yazı boyutları, arama çubuğu ve oynatıcı kontrolleri aynı kusursuz oranlarla ölçeklenir ve tarayıcı/sistem yeniden açıldığında korunur.
-                </p>
+                <p className="font-medium text-secondary">{t('common.tip')}</p>
+                <p>{t('settings.scaleTip')}</p>
               </div>
             </div>
           )}
 
-          {/* 2. SEKME: OYNATICILAR (GENİŞ PADDINGLİ DROPDOWN'LAR) */}
           {activeTab === 'players' && (
             <div className="space-y-5 animate-in fade-in duration-150">
-              {/* Müzik Oynatıcısı */}
               <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/15 text-accent shrink-0">
                     <Music className="h-4 w-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-primary">
-                      Varsayılan Müzik Oynatıcısı
-                    </h3>
-                    <p className="text-xs text-secondary mt-0.5">
-                      Albüm ve parçalar çalınırken kullanılacak ses motoru.
-                    </p>
+                    <h3 className="text-sm font-semibold text-primary">{t('players.audioTitle')}</h3>
+                    <p className="text-xs text-secondary mt-0.5">{t('players.audioDesc')}</p>
                   </div>
                 </div>
 
-                {/* Geniş ve Rahat Dropdown */}
                 <div className="relative pt-1">
                   <select
                     value={audioPlayer}
@@ -423,7 +435,7 @@ export default function SettingsPanel({
                   >
                     {AUDIO_PLAYERS.map((p) => (
                       <option key={p.id} value={p.id} className="bg-surface py-2 text-primary">
-                        {p.label}
+                        {p.labelKey ? t(p.labelKey) : p.label}
                       </option>
                     ))}
                   </select>
@@ -432,28 +444,22 @@ export default function SettingsPanel({
 
                 <p className="text-[11px] text-tertiary pt-1">
                   {audioPlayer === 'in_app'
-                    ? '✓ Gömülü oynatıcı etkindir: alt çubuk, çalma sırası ve şarkı içi sarma aktiftir.'
-                    : `✓ Harici uygulama modu: Şarkılar doğrudan ${audioPlayer} uygulamasına teslim edilir.`}
+                    ? t('players.audioInAppHint')
+                    : t('players.audioExternalHint', { app: audioPlayer })}
                 </p>
               </div>
 
-              {/* Video Oynatıcısı */}
               <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface text-secondary shrink-0 ring-1 ring-border">
                     <Film className="h-4 w-4 text-accent" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-primary">
-                      Varsayılan Video Oynatıcısı
-                    </h3>
-                    <p className="text-xs text-secondary mt-0.5">
-                      Film ve dizi bölümlerini başlatmak için harici uygulama.
-                    </p>
+                    <h3 className="text-sm font-semibold text-primary">{t('players.videoTitle')}</h3>
+                    <p className="text-xs text-secondary mt-0.5">{t('players.videoDesc')}</p>
                   </div>
                 </div>
 
-                {/* Geniş ve Rahat Dropdown */}
                 <div className="relative pt-1">
                   <select
                     value={videoPlayer}
@@ -462,7 +468,7 @@ export default function SettingsPanel({
                   >
                     {VIDEO_PLAYERS.map((p) => (
                       <option key={p.id} value={p.id} className="bg-surface py-2 text-primary">
-                        {p.label}
+                        {p.labelKey ? t(p.labelKey) : p.label}
                       </option>
                     ))}
                   </select>
@@ -471,20 +477,19 @@ export default function SettingsPanel({
 
                 <p className="text-[11px] text-tertiary pt-1">
                   {videoPlayer === 'in_app'
-                    ? '✓ Kura gömülü video oynatıcı etkindir: MP4 ve MKV dosyaları transmux ile anında uygulama içinde oynatılır.'
-                    : `✓ Harici uygulama modu: Videolar doğrudan ${videoPlayer} uygulamasına teslim edilir.`}
+                    ? t('players.videoInAppHint')
+                    : t('players.videoExternalHint', { app: videoPlayer })}
                 </p>
               </div>
 
-              {/* Video Oynatıcıda Harici Butonu Göster Toggle */}
               <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h3 className="text-sm font-semibold text-primary">
-                      Gömülü Video Oynatıcıda Harici Oynatıcı Kısayolu (IINA / VLC)
+                      {t('players.externalShortcutTitle')}
                     </h3>
                     <p className="text-xs text-secondary mt-0.5 max-w-md">
-                      Kapalıyken video oynatıcı çubuğunda IINA/VLC butonu gizlenir. Yalnızca video açılamazsa kurtarma alternatifi olarak gösterilir.
+                      {t('players.externalShortcutDesc')}
                     </p>
                   </div>
                   <button
@@ -507,7 +512,6 @@ export default function SettingsPanel({
             </div>
           )}
 
-          {/* 3. SEKME: UZAKTAN KUMANDA */}
           {activeTab === 'remote' && (
             <div className="space-y-5 animate-in fade-in duration-150">
               {remote ? (
@@ -516,11 +520,9 @@ export default function SettingsPanel({
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="text-sm font-semibold text-primary">
-                          Erişim Token Doğrulaması
+                          {t('remote.authToggleTitle')}
                         </h3>
-                        <p className="text-xs text-secondary mt-0.5">
-                          Yerel ağdaki diğer cihazlardan gelen oynatma ve tarama istekleri için güvenlik doğrulaması.
-                        </p>
+                        <p className="text-xs text-secondary mt-0.5">{t('remote.authToggleDesc')}</p>
                       </div>
                       <button
                         type="button"
@@ -540,9 +542,9 @@ export default function SettingsPanel({
 
                     <div className="flex items-center justify-between gap-3 rounded-xl bg-surface p-3.5 ring-1 ring-border text-xs">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[11px] text-tertiary">Aktif Erişim Token’ı</p>
+                        <p className="text-[11px] text-tertiary">{t('remote.activeToken')}</p>
                         <code className="font-mono text-xs text-accent mt-0.5 block truncate">
-                          {remote.auth_enabled ? remote.token : '— Doğrulama Devre Dışı'}
+                          {remote.auth_enabled ? remote.token : t('remote.authDisabled')}
                         </code>
                       </div>
                       {remote.auth_enabled && (
@@ -551,20 +553,20 @@ export default function SettingsPanel({
                             type="button"
                             onClick={copyToken}
                             className="flex items-center gap-1 rounded-lg bg-surface-hover px-2.5 py-1.5 text-xs text-secondary hover:text-primary ring-1 ring-border transition"
-                            title="Kopyala"
+                            title={t('common.copy')}
                           >
                             {copied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
-                            <span>{copied ? 'Kopyalandı' : 'Kopyala'}</span>
+                            <span>{copied ? t('common.copied') : t('common.copy')}</span>
                           </button>
                           <button
                             type="button"
                             onClick={regenerate}
                             disabled={busy}
                             className="flex items-center gap-1 rounded-lg bg-surface-hover px-2.5 py-1.5 text-xs text-secondary hover:text-primary ring-1 ring-border transition"
-                            title="Yeni Token Üret"
+                            title={t('remote.regenerateTitle')}
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
-                            <span>Yenile</span>
+                            <span>{t('common.refresh')}</span>
                           </button>
                         </div>
                       )}
@@ -572,31 +574,22 @@ export default function SettingsPanel({
                   </div>
 
                   <div className="rounded-xl border border-border/60 bg-surface-hover/30 p-4 text-xs text-tertiary space-y-1">
-                    <p className="font-medium text-secondary">Bağlantı Bilgisi:</p>
-                    <p>
-                      Telefon veya tabletinizden Kura'ya bağlanmak için üst bardaki yayın simgesine tıklayarak QR ve yerel ağ adresini alabilirsiniz.
-                    </p>
+                    <p className="font-medium text-secondary">{t('remote.connectionInfo')}</p>
+                    <p>{t('remote.connectionHelp')}</p>
                   </div>
                 </>
               ) : (
-                <p className="py-8 text-center text-xs text-tertiary">
-                  Uzaktan kumanda bilgisi yalnızca masaüstü uygulamasında görüntülenebilir.
-                </p>
+                <p className="py-8 text-center text-xs text-tertiary">{t('remote.desktopOnly')}</p>
               )}
             </div>
           )}
 
-          {/* 4. SEKME: AFİŞLER & TMDB */}
           {activeTab === 'tmdb' && (
             <div className="space-y-5 animate-in fade-in duration-150">
               <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3.5">
                 <div>
-                  <h3 className="text-sm font-semibold text-primary">
-                    TheMovieDB (TMDB) API Anahtarı
-                  </h3>
-                  <p className="text-xs text-secondary mt-1 leading-relaxed">
-                    Film ve dizi afişleri ile özet, puan ve tür bilgilerini otomatik çekmek için ücretsiz TMDB v3 API anahtarınızı tanımlayabilirsiniz.
-                  </p>
+                  <h3 className="text-sm font-semibold text-primary">{t('tmdb.title')}</h3>
+                  <p className="text-xs text-secondary mt-1 leading-relaxed">{t('tmdb.desc')}</p>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
@@ -605,7 +598,9 @@ export default function SettingsPanel({
                     value={tmdbKeyInput}
                     onChange={(e) => setTmdbKeyInput(e.target.value)}
                     placeholder={
-                      tmdbSaved ? `Kayıtlı: …${tmdbSaved.slice(-4)}` : 'API Key (v3)'
+                      tmdbSaved
+                        ? t('tmdb.savedPlaceholder', { last4: tmdbSaved.slice(-4) })
+                        : t('tmdb.placeholder')
                     }
                     className="h-11 flex-1 rounded-xl bg-surface px-4 py-2.5 text-xs font-mono text-primary ring-1 ring-border placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent"
                   />
@@ -615,7 +610,7 @@ export default function SettingsPanel({
                     onClick={saveTmdbKey}
                     className="h-11 rounded-xl bg-accent px-5 py-2.5 text-xs font-semibold text-background transition hover:bg-accent-hover disabled:opacity-50"
                   >
-                    Kaydet
+                    {t('common.save')}
                   </button>
                 </div>
 
@@ -625,7 +620,7 @@ export default function SettingsPanel({
               </div>
 
               <div className="rounded-xl border border-border/60 bg-surface-hover/30 p-4 text-xs text-tertiary space-y-1">
-                <p className="font-medium text-secondary">Nasıl API Anahtarı Alınır?</p>
+                <p className="font-medium text-secondary">{t('tmdb.howTitle')}</p>
                 <p className="leading-relaxed">
                   <a
                     href="https://www.themoviedb.org/signup"
@@ -635,22 +630,19 @@ export default function SettingsPanel({
                   >
                     themoviedb.org
                   </a>{' '}
-                  üzerinden ücretsiz hesap açıp Ayarlar → API sekmesinden anında bir v3 anahtarı oluşturabilirsiniz. Anahtar girilmediğinde yerel klasör posterleri ve iTunes zinciri fallback olarak çalışır.
+                  {t('tmdb.howBody')}
                 </p>
               </div>
             </div>
           )}
 
-          {/* 5. SEKME: LAST.FM SCROBBLER */}
           {activeTab === 'lastfm' && (
             <div className="space-y-6 animate-in fade-in duration-150">
               <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-primary">
-                        Last.fm Scrobbler & Now Playing
-                      </h3>
+                      <h3 className="text-sm font-semibold text-primary">{t('lastfm.title')}</h3>
                       {lastFmStatus?.connected ? (
                         <span className="flex items-center gap-1.5 rounded-full bg-status-online/15 px-2.5 py-0.5 text-[11px] font-medium text-status-online ring-1 ring-status-online/30">
                           <span className="h-1.5 w-1.5 rounded-full bg-status-online" />
@@ -658,33 +650,27 @@ export default function SettingsPanel({
                         </span>
                       ) : (
                         <span className="rounded-full bg-surface px-2.5 py-0.5 text-[11px] font-medium text-tertiary ring-1 ring-border">
-                          Bağlı Değil
+                          {t('lastfm.notConnected')}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-secondary leading-relaxed">
-                      Kura'da dinlediğiniz şarkıları anında Last.fm profilinize yansıtın ve dinleme istatistiklerinizi tutun.
-                    </p>
+                    <p className="text-xs text-secondary leading-relaxed">{t('lastfm.desc')}</p>
                   </div>
                 </div>
 
                 {!lastFmStatus?.has_api_keys ? (
                   <div className="rounded-lg bg-surface p-4 ring-1 ring-border text-xs text-status-offline space-y-1.5">
-                    <p className="font-semibold">Last.fm API Anahtarları Bulunamadı</p>
-                    <p className="text-secondary leading-relaxed">
-                      Proje kök dizinindeki <code className="font-mono text-accent">.env</code> dosyasında <code className="font-mono">LASTFM_API_KEY</code> ve <code className="font-mono">LASTFM_SHARED_SECRET</code> anahtarlarının tanımlı olduğundan emin olun.
-                    </p>
+                    <p className="font-semibold">{t('lastfm.keysMissingTitle')}</p>
+                    <p className="text-secondary leading-relaxed">{t('lastfm.keysMissingBody')}</p>
                   </div>
                 ) : lastFmStatus.connected ? (
                   <div className="space-y-4 pt-2">
                     <div className="flex items-center justify-between rounded-lg bg-surface p-4 ring-1 ring-border">
                       <div className="space-y-0.5">
                         <div className="text-xs font-medium text-primary">
-                          Dinlemeleri Scrobble Et
+                          {t('lastfm.scrobbleToggle')}
                         </div>
-                        <div className="text-[11px] text-tertiary">
-                          Şarkının en az %50'si veya 4 dakikası dinlendiğinde profilinize eklenir
-                        </div>
+                        <div className="text-[11px] text-tertiary">{t('lastfm.scrobbleHint')}</div>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input
@@ -704,16 +690,14 @@ export default function SettingsPanel({
                         onClick={handleDisconnectLastFm}
                         className="rounded-xl border border-border bg-surface px-4 py-2 text-xs font-medium text-status-offline hover:bg-status-offline/10 transition disabled:opacity-50"
                       >
-                        {lastFmLoading ? 'İşleniyor…' : 'Bağlantıyı Kes'}
+                        {lastFmLoading ? t('common.processing') : t('lastfm.disconnect')}
                       </button>
                     </div>
                   </div>
                 ) : lastFmPendingToken ? (
                   <div className="space-y-4 pt-2">
                     <div className="rounded-lg bg-surface p-4 ring-1 ring-border text-xs space-y-3">
-                      <p className="text-secondary leading-relaxed">
-                        Tarayıcınızda Last.fm yetkilendirme sayfası açıldı. Lütfen hesabınızla giriş yapıp <strong>"Yes, allow access" (İzin Ver)</strong> butonuna tıklayın.
-                      </p>
+                      <p className="text-secondary leading-relaxed">{t('lastfm.authPending')}</p>
                       {lastFmAuthUrl && (
                         <a
                           href={lastFmAuthUrl}
@@ -722,7 +706,7 @@ export default function SettingsPanel({
                           className="inline-flex items-center gap-1.5 text-accent hover:underline text-xs"
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
-                          Sayfa açılmadıysa buraya tıklayın
+                          {t('lastfm.openAuthAgain')}
                         </a>
                       )}
                     </div>
@@ -735,7 +719,7 @@ export default function SettingsPanel({
                         className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-xs font-semibold text-background hover:bg-accent-hover transition disabled:opacity-50 shadow-sm"
                       >
                         {lastFmLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                        Yetkilendirmeyi Tamamla
+                        {t('lastfm.completeAuth')}
                       </button>
                       <button
                         type="button"
@@ -747,7 +731,7 @@ export default function SettingsPanel({
                         }}
                         className="rounded-xl bg-surface px-4 py-2.5 text-xs font-medium text-tertiary hover:text-primary transition"
                       >
-                        İptal
+                        {t('common.cancel')}
                       </button>
                     </div>
                   </div>
@@ -756,11 +740,9 @@ export default function SettingsPanel({
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-lg bg-surface p-4 ring-1 ring-border">
                       <div className="space-y-1">
                         <div className="text-xs font-medium text-primary">
-                          Hesabınızı Bağlayın
+                          {t('lastfm.connectTitle')}
                         </div>
-                        <div className="text-[11px] text-tertiary">
-                          Last.fm hesabınızla tek tıkla oturum açın
-                        </div>
+                        <div className="text-[11px] text-tertiary">{t('lastfm.connectHint')}</div>
                       </div>
                       <button
                         type="button"
@@ -769,7 +751,7 @@ export default function SettingsPanel({
                         className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-xs font-semibold text-background hover:bg-accent-hover transition disabled:opacity-50 shadow-sm shrink-0"
                       >
                         {lastFmLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                        Last.fm'e Bağlan
+                        {t('lastfm.connect')}
                       </button>
                     </div>
                   </div>
@@ -783,13 +765,9 @@ export default function SettingsPanel({
               </div>
 
               <div className="rounded-xl border border-border/60 bg-surface-hover/30 p-4 text-xs text-tertiary space-y-1.5">
-                <p className="font-medium text-secondary">Last.fm Scrobble Nasıl Çalışır?</p>
-                <p className="leading-relaxed">
-                  • <strong>Now Playing:</strong> Şarkı çalmaya başladığında profilinizde <em>"Şu an dinleniyor"</em> olarak görünür.
-                </p>
-                <p className="leading-relaxed">
-                  • <strong>Scrobble:</strong> Şarkının en az %50'si veya 4 dakikası dinlendiğinde otomatik olarak dinleme geçmişinize kaydedilir.
-                </p>
+                <p className="font-medium text-secondary">{t('lastfm.howTitle')}</p>
+                <p className="leading-relaxed">{t('lastfm.howNowPlaying')}</p>
+                <p className="leading-relaxed">{t('lastfm.howScrobble')}</p>
               </div>
             </div>
           )}
@@ -797,20 +775,19 @@ export default function SettingsPanel({
 
         {error && <p className="text-xs text-status-offline">{error}</p>}
 
-        {/* Modal Alt Bar */}
         <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-tertiary text-[11px] font-mono select-none">
             <span className="font-serif text-accent/80 text-[13px]">蔵</span>
-            <span>Kura</span>
+            <span>{t('common.brand')}</span>
             <span className="text-border">·</span>
-            <span>Kişisel Medya Arşivi</span>
+            <span>{t('common.brandFull')}</span>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="rounded-xl bg-surface-hover px-5 py-2.5 text-xs font-medium text-primary hover:bg-border transition"
           >
-            Tamam
+            {t('common.ok')}
           </button>
         </div>
       </div>

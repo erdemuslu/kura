@@ -4,6 +4,8 @@
  * - Tarayıcıda (mobil/TV remote)   -> Axum REST API (`fetch`)
  */
 
+import { getUiLocale, translate } from '../i18n';
+
 export type MediaType = 'movie' | 'series' | 'music';
 
 export interface MediaItem {
@@ -121,7 +123,7 @@ export interface RemoteInfo {
 
 /** Sunucu token doğrulaması açıkken REST isteği 401 döndürürse fırlatılır. */
 export class ApiAuthError extends Error {
-  constructor(message = 'Uzaktan erişim token’ı gerekli') {
+  constructor(message = 'Remote access token required') {
     super(message);
     this.name = 'ApiAuthError';
   }
@@ -131,13 +133,15 @@ export class ApiAuthError extends Error {
 export interface PlayerOption {
   id: string;
   label: string;
+  /** i18n key for localizable labels; brand names keep `label` only. */
+  labelKey?: string;
   isAudio?: boolean;
   isVideo?: boolean;
 }
 
 export const AUDIO_PLAYERS: PlayerOption[] = [
-  { id: 'in_app', label: 'Gömülü Oynatıcı' },
-  { id: 'system', label: 'Sistem Varsayılanı' },
+  { id: 'in_app', label: 'Built-in Player', labelKey: 'players.audioInApp' },
+  { id: 'system', label: 'System Default', labelKey: 'players.systemDefault' },
   { id: 'Audirvana', label: 'Audirvana' },
   { id: 'foobar2000', label: 'foobar2000' },
   { id: 'VLC', label: 'VLC' },
@@ -146,8 +150,8 @@ export const AUDIO_PLAYERS: PlayerOption[] = [
 ];
 
 export const VIDEO_PLAYERS: PlayerOption[] = [
-  { id: 'in_app', label: 'Kura (Gömülü / Uygulama İçi)' },
-  { id: 'system', label: 'Sistem Varsayılanı' },
+  { id: 'in_app', label: 'Kura (Built-in / In-App)', labelKey: 'players.videoInApp' },
+  { id: 'system', label: 'System Default', labelKey: 'players.systemDefault' },
   { id: 'IINA', label: 'IINA' },
   { id: 'VLC', label: 'VLC' },
   { id: 'QuickTime Player', label: 'QuickTime Player' },
@@ -175,8 +179,8 @@ async function restFetch(path: string, init?: RequestInit): Promise<Response> {
   const token = getRemoteToken();
   if (token) headers.set('X-Auth-Token', token);
   const res = await fetch(path, { ...init, headers });
-  if (res.status === 401) throw new ApiAuthError();
-  if (!res.ok) throw new Error(`Sunucu hatası: ${res.status}`);
+  if (res.status === 401) throw new ApiAuthError(translate(getUiLocale(), 'remote.authRequired'));
+  if (!res.ok) throw new Error(translate(getUiLocale(), 'errors.server', { status: res.status }));
   return res;
 }
 
@@ -189,7 +193,7 @@ export async function launchPlayer(req: PlayRequest): Promise<LaunchResult> {
         filePath: req.filePath,
         targetApp: req.targetApp,
       });
-      return { success: true, message: 'Başlatıldı' };
+      return { success: true, message: translate(getUiLocale(), 'players.launched') };
     } catch (error) {
       return { success: false, message: String(error) };
     }
@@ -688,7 +692,7 @@ export async function getEpisodes(
 /** Uzaktan erişim token doğrulamasını açar/kapar. */
 export async function setRemoteAuthEnabled(enabled: boolean): Promise<void> {
   if (!isRunningInTauri()) {
-    throw new Error('Ayarlar yalnızca masaüstü uygulamasından değiştirilebilir');
+    throw new Error(translate(getUiLocale(), 'settings.desktopOnly'));
   }
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('set_remote_auth_enabled', { enabled });
@@ -697,7 +701,7 @@ export async function setRemoteAuthEnabled(enabled: boolean): Promise<void> {
 /** Uzaktan erişim token'ını yeniden üretir ve döndürür. */
 export async function regenerateRemoteToken(): Promise<string> {
   if (!isRunningInTauri()) {
-    throw new Error('Ayarlar yalnızca masaüstü uygulamasından değiştirilebilir');
+    throw new Error(translate(getUiLocale(), 'settings.desktopOnly'));
   }
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<string>('regenerate_remote_token');
@@ -713,7 +717,7 @@ export async function getTmdbApiKey(): Promise<string | null> {
 /** TMDB API key'i kaydeder (boş bırakılırsa özellik kapanır). */
 export async function setTmdbApiKey(key: string): Promise<void> {
   if (!isRunningInTauri()) {
-    throw new Error('Ayarlar yalnızca masaüstü uygulamasından değiştirilebilir');
+    throw new Error(translate(getUiLocale(), 'settings.desktopOnly'));
   }
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('set_tmdb_api_key', { key });
@@ -729,7 +733,7 @@ export async function browseDirectory(): Promise<string | null> {
   const selected = await open({
     directory: true,
     multiple: false,
-    title: 'Medya dizini seç',
+    title: translate(getUiLocale(), 'scan.browseDialogTitle'),
   });
   return typeof selected === 'string' ? selected : null;
 }

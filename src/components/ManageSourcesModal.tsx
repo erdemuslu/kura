@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { browseDirectory, isRunningInTauri } from '../api/client';
+import { useLocale } from '../context/LocaleContext';
 
 export interface CategoryInfo {
   id: string;
@@ -42,6 +43,7 @@ export default function ManageSourcesModal({
   onDeleteCategory,
   isDefault = false,
 }: ManageSourcesModalProps) {
+  const { t } = useLocale();
   const [removingPath, setRemovingPath] = useState<string | null>(null);
   const [confirmPath, setConfirmPath] = useState<string | null>(null);
   const [confirmDeleteCat, setConfirmDeleteCat] = useState(false);
@@ -104,10 +106,10 @@ export default function ManageSourcesModal({
 
   const mediaTypeLabel =
     category.mediaType === 'movie'
-      ? 'Film Menüsü'
+      ? t('categories.movieMenu')
       : category.mediaType === 'series'
-      ? 'Dizi Menüsü'
-      : 'Müzik Menüsü';
+        ? t('categories.seriesMenu')
+        : t('categories.musicMenu');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
@@ -115,7 +117,6 @@ export default function ManageSourcesModal({
         className="w-full max-w-lg rounded-xl bg-surface p-6 shadow-2xl ring-1 ring-border relative animate-in zoom-in-95 duration-200 space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Kapat Butonu */}
         <button
           type="button"
           onClick={onClose}
@@ -124,7 +125,6 @@ export default function ManageSourcesModal({
           <X className="h-4 w-4" />
         </button>
 
-        {/* Başlık Alanı */}
         <div>
           <div className="flex items-center gap-2">
             {editingLabel ? (
@@ -140,7 +140,7 @@ export default function ManageSourcesModal({
                   type="button"
                   onClick={handleSaveRename}
                   className="rounded p-1 text-accent hover:bg-surface-hover"
-                  title="Kaydet"
+                  title={t('common.save')}
                 >
                   <Check className="h-4 w-4" />
                 </button>
@@ -148,7 +148,7 @@ export default function ManageSourcesModal({
                   type="button"
                   onClick={() => setEditingLabel(false)}
                   className="rounded p-1 text-tertiary hover:text-primary"
-                  title="İptal"
+                  title={t('common.cancel')}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -166,7 +166,7 @@ export default function ManageSourcesModal({
                       setEditingLabel(true);
                     }}
                     className="p-1 text-tertiary hover:text-primary transition rounded"
-                    title="Menüyü yeniden adlandır"
+                    title={t('sources.rename')}
                   >
                     <Edit2 className="h-3.5 w-3.5" />
                   </button>
@@ -177,16 +177,13 @@ export default function ManageSourcesModal({
               {mediaTypeLabel}
             </span>
           </div>
-          <p className="mt-1 text-xs text-secondary">
-            Bu menüye bağlı klasör yollarını görüntüleyin, yeni klasör ekleyin veya çıkarın.
-          </p>
+          <p className="mt-1 text-xs text-secondary">{t('sources.desc')}</p>
         </div>
 
-        {/* Bağlı Klasörler Listesi */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="font-medium text-secondary">
-              Bağlı Klasörler ({category.paths.length})
+              {t('sources.linked', { n: category.paths.length })}
             </span>
             <button
               type="button"
@@ -195,7 +192,7 @@ export default function ManageSourcesModal({
               className="flex items-center gap-1.5 rounded-lg bg-accent/15 px-2.5 py-1 text-xs font-medium text-accent ring-1 ring-accent/30 hover:bg-accent/25 transition disabled:opacity-50"
             >
               <FolderPlus className="h-3.5 w-3.5" />
-              <span>{browsing ? 'Seçiliyor…' : 'Klasör Ekle'}</span>
+              <span>{browsing ? t('common.selecting') : t('sources.addFolder')}</span>
             </button>
           </div>
 
@@ -205,7 +202,7 @@ export default function ManageSourcesModal({
                 type="text"
                 value={manualPath}
                 onChange={(e) => setManualPath(e.target.value)}
-                placeholder="/Volumes/Disk/Klasör"
+                placeholder="/Volumes/Disk/Folder"
                 className="flex-1 rounded-lg bg-surface-hover px-3 py-1.5 text-xs text-primary ring-1 ring-border focus:outline-none focus:ring-1 focus:ring-accent"
                 autoFocus
               />
@@ -213,23 +210,21 @@ export default function ManageSourcesModal({
                 type="submit"
                 className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-background hover:bg-accent-hover transition"
               >
-                Ekle
+                {t('common.add')}
               </button>
               <button
                 type="button"
                 onClick={() => setShowManualInput(false)}
                 className="rounded-lg px-2 text-xs text-tertiary hover:text-primary"
               >
-                Vazgeç
+                {t('common.dismiss')}
               </button>
             </form>
           )}
 
           <div className="max-h-60 overflow-y-auto rounded-lg ring-1 ring-border divide-y divide-border/50 bg-surface-hover/30">
             {category.paths.length === 0 ? (
-              <div className="p-6 text-center text-xs text-tertiary">
-                Bu menüye henüz bir klasör bağlanmadı. Yukarıdaki &quot;Klasör Ekle&quot; butonuyla başlayabilirsiniz.
-              </div>
+              <div className="p-6 text-center text-xs text-tertiary">{t('sources.empty')}</div>
             ) : (
               category.paths.map((p) => {
                 const isConfirming = confirmPath === p;
@@ -257,7 +252,7 @@ export default function ManageSourcesModal({
                             className="rounded bg-status-offline/20 px-2 py-1 text-[11px] font-medium text-status-offline hover:bg-status-offline/30 transition flex items-center gap-1"
                           >
                             {isRemoving && <Loader2 className="h-3 w-3 animate-spin" />}
-                            <span>Onayla</span>
+                            <span>{t('common.confirm')}</span>
                           </button>
                           <button
                             type="button"
@@ -265,7 +260,7 @@ export default function ManageSourcesModal({
                             disabled={isRemoving}
                             className="rounded px-2 py-1 text-[11px] text-tertiary hover:text-primary transition"
                           >
-                            İptal
+                            {t('common.cancel')}
                           </button>
                         </div>
                       ) : (
@@ -273,7 +268,7 @@ export default function ManageSourcesModal({
                           <button
                             type="button"
                             onClick={() => onScanPath(p, category.label)}
-                            title="Bu klasörü yeniden tara"
+                            title={t('sources.rescan')}
                             className="p-1 text-tertiary hover:text-primary transition rounded hover:bg-surface"
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
@@ -281,7 +276,7 @@ export default function ManageSourcesModal({
                           <button
                             type="button"
                             onClick={() => setConfirmPath(p)}
-                            title="Klasörü bu menüden ve arşivden kaldır"
+                            title={t('sources.remove')}
                             className="p-1 text-tertiary hover:text-status-offline transition rounded hover:bg-status-offline/10"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -296,14 +291,13 @@ export default function ManageSourcesModal({
           </div>
         </div>
 
-        {/* Menüyü Sil Seçeneği (yalnızca özel oluşturulmuş menülerde) */}
         {!isDefault && onDeleteCategory && (
           <div className="pt-2 border-t border-border/40 flex items-center justify-between text-xs">
             {confirmDeleteCat ? (
               <div className="flex items-center justify-between w-full p-2.5 rounded-lg bg-status-offline/10 ring-1 ring-status-offline/30 animate-in fade-in">
                 <div className="flex items-center gap-2 text-status-offline">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>Bu menüyü silmek istediğinize emin misiniz?</span>
+                  <span>{t('sources.deleteConfirm')}</span>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -314,14 +308,14 @@ export default function ManageSourcesModal({
                     }}
                     className="rounded bg-status-offline px-2.5 py-1 text-background font-semibold hover:bg-status-offline/90 transition text-[11px]"
                   >
-                    Sil
+                    {t('common.delete')}
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmDeleteCat(false)}
                     className="rounded px-2 py-1 text-tertiary hover:text-primary text-[11px]"
                   >
-                    Vazgeç
+                    {t('common.dismiss')}
                   </button>
                 </div>
               </div>
@@ -332,20 +326,19 @@ export default function ManageSourcesModal({
                 className="text-tertiary hover:text-status-offline transition text-xs flex items-center gap-1.5"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                <span>Bu Menüyü Sil</span>
+                <span>{t('sources.deleteMenu')}</span>
               </button>
             )}
           </div>
         )}
 
-        {/* Alt Kapatma Çubuğu */}
         <div className="flex justify-end pt-2">
           <button
             type="button"
             onClick={onClose}
             className="rounded-lg bg-surface-hover px-4 py-2 text-xs font-medium text-primary hover:bg-border transition ring-1 ring-border"
           >
-            Tamam
+            {t('common.ok')}
           </button>
         </div>
       </div>

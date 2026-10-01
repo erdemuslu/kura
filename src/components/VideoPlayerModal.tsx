@@ -27,6 +27,7 @@ import {
   streamVideoUrl,
   subtitleUrl,
 } from '../api/client';
+import { useLocale } from '../context/LocaleContext';
 
 export interface VideoPlayerItem {
   filePath: string;
@@ -131,6 +132,7 @@ export default function VideoPlayerModal({
   video,
   onExternalLaunch,
 }: VideoPlayerModalProps) {
+  const { t } = useLocale();
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -237,7 +239,7 @@ export default function VideoPlayerModal({
 
     fetch(url)
       .then((res) => {
-        if (!res.ok) throw new Error('Altyazı yok');
+        if (!res.ok) throw new Error('No subtitles');
         return res.text();
       })
       .then((vttText) => {
@@ -504,12 +506,12 @@ export default function VideoPlayerModal({
         e.preventDefault();
         const next = Number(((subSettings.offset || 0) - 0.25).toFixed(2));
         updateSubSettings({ offset: next });
-        showToast(`Altyazı: ${next > 0 ? '+' : ''}${next.toFixed(2)}s`);
+        showToast(t('player.subToast', { offset: `${next > 0 ? '+' : ''}${next.toFixed(2)}` }));
       } else if (e.key.toLowerCase() === 'h') {
         e.preventDefault();
         const next = Number(((subSettings.offset || 0) + 0.25).toFixed(2));
         updateSubSettings({ offset: next });
-        showToast(`Altyazı: ${next > 0 ? '+' : ''}${next.toFixed(2)}s`);
+        showToast(t('player.subToast', { offset: `${next > 0 ? '+' : ''}${next.toFixed(2)}` }));
       } else if (e.key === 'Escape') {
         if (isFullscreen) {
           document.exitFullscreen().catch(() => {});
@@ -788,7 +790,7 @@ export default function VideoPlayerModal({
         <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
           <div className="flex flex-col items-center gap-3 rounded-2xl bg-black/60 px-6 py-4 backdrop-blur-md">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
-            <span className="font-mono text-xs text-white/80">Hazırlanıyor…</span>
+            <span className="font-mono text-xs text-white/80">{t('player.buffering')}</span>
           </div>
         </div>
       )}
@@ -797,14 +799,14 @@ export default function VideoPlayerModal({
       {resumePrompt && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-xl bg-surface/95 px-5 py-3 text-xs text-primary shadow-2xl ring-1 ring-border backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-200">
           <span>
-            Kaldığınız yerden devam edilsin mi? (<strong>{formatDuration(Math.floor(resumePrompt))}</strong>)
+            {t('player.resumePrompt', { time: formatDuration(Math.floor(resumePrompt)) })}
           </span>
           <button
             type="button"
             onClick={resumeAtSaved}
             className="rounded-lg bg-accent px-3 py-1 font-semibold text-background hover:bg-accent-hover transition"
           >
-            Devam Et
+            {t('player.resume')}
           </button>
           <button
             type="button"
@@ -821,10 +823,10 @@ export default function VideoPlayerModal({
         <div className="absolute inset-0 z-30 flex items-center justify-center p-6 bg-black/85 backdrop-blur-sm">
           <div className="max-w-md rounded-2xl bg-surface p-7 text-center shadow-2xl ring-1 ring-border space-y-4">
             <h3 className="font-serif text-2xl text-primary font-normal">
-              Oynatılamadı
+              {t('player.playbackFailed')}
             </h3>
             <p className="text-xs text-secondary leading-relaxed">
-              Bu video doğrudan uygulama içinde oynatılamadı. IINA veya VLC ile anında kesintisiz izleyebilirsiniz.
+              {t('player.playbackFailedHint')}
             </p>
             <div className="flex justify-center gap-3 pt-2">
               <button
@@ -833,21 +835,21 @@ export default function VideoPlayerModal({
                 className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-semibold text-background hover:bg-accent-hover transition"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
-                <span>IINA ile Aç</span>
+                <span>{t('player.openWithIina')}</span>
               </button>
               <button
                 type="button"
                 onClick={() => launchExternally('VLC')}
                 className="flex items-center gap-2 rounded-xl bg-surface-hover px-4 py-2.5 text-xs font-medium text-primary ring-1 ring-border hover:bg-border transition"
               >
-                <span>VLC ile Aç</span>
+                <span>{t('player.openWithVlc')}</span>
               </button>
               <button
                 type="button"
                 onClick={handleClose}
                 className="rounded-xl px-4 py-2.5 text-xs text-tertiary hover:text-primary transition"
               >
-                Kapat
+                {t('common.close')}
               </button>
             </div>
           </div>
@@ -866,7 +868,7 @@ export default function VideoPlayerModal({
             type="button"
             onClick={handleClose}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-primary ring-1 ring-white/10 hover:bg-white/20 transition backdrop-blur-md"
-            title="Kapat (Esc)"
+            title={t('common.closeEsc')}
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
@@ -887,7 +889,7 @@ export default function VideoPlayerModal({
               type="button"
               onClick={() => launchExternally('IINA')}
               className="flex items-center gap-1.5 rounded-lg bg-black/50 px-3 py-1.5 text-xs font-medium text-secondary ring-1 ring-white/10 hover:bg-white/15 hover:text-white transition backdrop-blur-md"
-              title="Harici Oynatıcıda Aç"
+              title={t('player.openExternally')}
             >
               <ExternalLink className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">IINA / VLC</span>
@@ -897,7 +899,7 @@ export default function VideoPlayerModal({
             type="button"
             onClick={handleClose}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-tertiary ring-1 ring-white/10 hover:bg-white/20 hover:text-white transition backdrop-blur-md"
-            title="Kapat"
+            title={t('common.close')}
           >
             <X className="h-5 w-5" />
           </button>
@@ -948,7 +950,7 @@ export default function VideoPlayerModal({
               type="button"
               onClick={togglePlay}
               className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-background hover:bg-accent-hover transition shadow-md"
-              title={isPlaying ? 'Duraklat (Boşluk)' : 'Oynat (Boşluk)'}
+              title={isPlaying ? t('player.pauseSpace') : t('player.playSpace')}
             >
               {isPlaying ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current ml-0.5" />}
             </button>
@@ -957,7 +959,7 @@ export default function VideoPlayerModal({
               type="button"
               onClick={() => seekRelative(-10)}
               className="text-white/80 hover:text-white transition p-1"
-              title="10 saniye geri (Sol Ok)"
+              title={t('player.seekBack10')}
             >
               <RotateCcw className="h-5 w-5" />
             </button>
@@ -966,7 +968,7 @@ export default function VideoPlayerModal({
               type="button"
               onClick={() => seekRelative(10)}
               className="text-white/80 hover:text-white transition p-1"
-              title="10 saniye ileri (Sağ Ok)"
+              title={t('player.seekFwd10')}
             >
               <RotateCw className="h-5 w-5" />
             </button>
@@ -993,7 +995,7 @@ export default function VideoPlayerModal({
                 type="button"
                 onClick={toggleMute}
                 className="text-white/80 hover:text-white transition p-1"
-                title={isMuted ? 'Sesi Aç (M)' : 'Sessiz (M)'}
+                title={isMuted ? t('player.unmuteM') : t('player.muteM')}
               >
                 {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
               </button>
@@ -1016,7 +1018,7 @@ export default function VideoPlayerModal({
                 className={`p-1.5 rounded-lg transition ${
                   subtitleEnabled ? 'text-accent' : 'text-white/60 hover:text-white'
                 }`}
-                title="Altyazı ve Görünüm Ayarları"
+                title={t('player.subtitleSettings')}
               >
                 <Subtitles className="h-5 w-5" />
               </button>
@@ -1027,7 +1029,7 @@ export default function VideoPlayerModal({
                   <div className="flex items-center justify-between pb-2 border-b border-white/10">
                     <div className="flex items-center gap-2">
                       <Subtitles className="h-4 w-4 text-accent" />
-                      <span className="font-semibold text-white text-[13px]">Altyazı</span>
+                      <span className="font-semibold text-white text-[13px]">{t('player.subtitles')}</span>
                     </div>
                     <button
                       type="button"
@@ -1038,7 +1040,7 @@ export default function VideoPlayerModal({
                           : 'bg-white/10 text-white/60 hover:text-white'
                       }`}
                     >
-                      {subtitleEnabled ? 'Açık' : 'Kapalı'}
+                      {subtitleEnabled ? t('common.on') : t('common.off')}
                     </button>
                   </div>
 
@@ -1046,13 +1048,13 @@ export default function VideoPlayerModal({
                     <>
                       {/* Boyut */}
                       <div className="space-y-1.5">
-                        <span className="text-[11px] font-medium text-white/50">Boyut</span>
+                        <span className="text-[11px] font-medium text-white/50">{t('player.subSize')}</span>
                         <div className="grid grid-cols-4 gap-1">
                           {[
-                            { id: 'sm', label: 'Küçük' },
-                            { id: 'md', label: 'Normal' },
-                            { id: 'lg', label: 'Büyük' },
-                            { id: 'xl', label: 'Çok Büyük' },
+                            { id: 'sm', label: t('player.subSizeSm') },
+                            { id: 'md', label: t('player.subSizeMd') },
+                            { id: 'lg', label: t('player.subSizeLg') },
+                            { id: 'xl', label: t('player.subSizeXl') },
                           ].map((s) => (
                             <button
                               key={s.id}
@@ -1072,12 +1074,12 @@ export default function VideoPlayerModal({
 
                       {/* Yazı Rengi */}
                       <div className="space-y-1.5">
-                        <span className="text-[11px] font-medium text-white/50">Yazı Rengi</span>
+                        <span className="text-[11px] font-medium text-white/50">{t('player.subColor')}</span>
                         <div className="grid grid-cols-3 gap-1.5">
                           {[
-                            { id: 'yellow', label: 'Sarı', color: '#facc15' },
-                            { id: 'white', label: 'Beyaz', color: '#ffffff' },
-                            { id: 'cyan', label: 'Camgöbeği', color: '#67e8f9' },
+                            { id: 'yellow', label: t('player.subYellow'), color: '#facc15' },
+                            { id: 'white', label: t('player.subWhite'), color: '#ffffff' },
+                            { id: 'cyan', label: t('player.subCyan'), color: '#67e8f9' },
                           ].map((c) => (
                             <button
                               key={c.id}
@@ -1098,12 +1100,12 @@ export default function VideoPlayerModal({
 
                       {/* Arka Plan Stili */}
                       <div className="space-y-1.5">
-                        <span className="text-[11px] font-medium text-white/50">Arka Plan</span>
+                        <span className="text-[11px] font-medium text-white/50">{t('player.subBg')}</span>
                         <div className="grid grid-cols-3 gap-1">
                           {[
-                            { id: 'translucent', label: 'Yarı Saydam' },
-                            { id: 'solid', label: 'Siyah' },
-                            { id: 'shadow', label: 'Gölge' },
+                            { id: 'translucent', label: t('player.subBgTranslucent') },
+                            { id: 'solid', label: t('player.subBgSolid') },
+                            { id: 'shadow', label: t('player.subBgShadow') },
                           ].map((bg) => (
                             <button
                               key={bg.id}
@@ -1123,11 +1125,11 @@ export default function VideoPlayerModal({
 
                       {/* Konum: Alt Siyah Bant vs Görüntü Üzeri */}
                       <div className="space-y-1.5">
-                        <span className="text-[11px] font-medium text-white/50">Konum</span>
+                        <span className="text-[11px] font-medium text-white/50">{t('player.subPosition')}</span>
                         <div className="grid grid-cols-2 gap-1.5">
                           {[
-                            { id: 'letterbox', label: 'Alt Siyah Bantta' },
-                            { id: 'video', label: 'Görüntü Üzerinde' },
+                            { id: 'letterbox', label: t('player.subLetterbox') },
+                            { id: 'video', label: t('player.subOnVideo') },
                           ].map((pos) => (
                             <button
                               key={pos.id}
@@ -1148,7 +1150,7 @@ export default function VideoPlayerModal({
                       {/* Senkronizasyon Zaman Ayarı (G / H Kısayolları) */}
                       <div className="space-y-1.5 pt-1 border-t border-white/10">
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-medium text-white/50">Senkronizasyon (G / H)</span>
+                          <span className="text-[11px] font-medium text-white/50">{t('player.subSync')}</span>
                           {subSettings.offset !== 0 && (
                             <button
                               type="button"
@@ -1164,20 +1166,20 @@ export default function VideoPlayerModal({
                             type="button"
                             onClick={() => updateSubSettings({ offset: Number(((subSettings.offset || 0) - 0.25).toFixed(2)) })}
                             className="h-6 w-6 flex items-center justify-center rounded bg-white/10 text-white font-bold hover:bg-white/20 transition active:scale-95 text-xs"
-                            title="0.25s Öne Al (G)"
+                            title={t('player.subEarlier')}
                           >
                             -
                           </button>
                           <span className="font-mono text-xs font-semibold text-white">
                             {subSettings.offset === 0
-                              ? '0.00s (Varsayılan)'
+                              ? t('player.subOffsetDefault')
                               : `${subSettings.offset > 0 ? '+' : ''}${subSettings.offset.toFixed(2)}s`}
                           </span>
                           <button
                             type="button"
                             onClick={() => updateSubSettings({ offset: Number(((subSettings.offset || 0) + 0.25).toFixed(2)) })}
                             className="h-6 w-6 flex items-center justify-center rounded bg-white/10 text-white font-bold hover:bg-white/20 transition active:scale-95 text-xs"
-                            title="0.25s Geciktir (H)"
+                            title={t('player.subLater')}
                           >
                             +
                           </button>
@@ -1195,7 +1197,7 @@ export default function VideoPlayerModal({
                 type="button"
                 onClick={() => setShowSpeedMenu(!showSpeedMenu)}
                 className="px-2 py-1 rounded-lg text-xs font-mono text-white/80 hover:text-white hover:bg-white/10 transition"
-                title="Oynatma Hızı"
+                title={t('player.speed')}
               >
                 {playbackSpeed}x
               </button>
@@ -1226,7 +1228,7 @@ export default function VideoPlayerModal({
               type="button"
               onClick={toggleFullscreen}
               className="text-white/80 hover:text-white transition p-1"
-              title={isFullscreen ? 'Tam Ekrandan Çık (F)' : 'Tam Ekran (F)'}
+              title={isFullscreen ? t('player.exitFullscreen') : t('player.fullscreen')}
             >
               {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
             </button>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 600" fill="none">
+  <rect width="1220" height="600" fill="#17130f"/>
+  <rect x="142.5" y="122.5" width="355" height="355" rx="97" fill="#2a2118" stroke="#5b4524" stroke-width="5"/>
+  <text x="320" y="300" text-anchor="middle" dominant-baseline="central" font-family="'Noto Serif JP',serif" font-weight="600" font-size="194" fill="#e0a850">蔵</text>
+  <text x="580" y="318" font-family="Newsreader,serif" font-size="200" fill="#f4ead9">Kura</text>
+  <circle cx="1000" cy="248" r="22" fill="#e0a850"/>
+  <text x="584" y="425" font-family="'JetBrains Mono',monospace" font-size="41" letter-spacing="14" fill="#8c8272">MEDYA ARŞİVİ</text>
+</svg>
