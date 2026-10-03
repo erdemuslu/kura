@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
+  BarChart2,
   Check,
   ChevronDown,
+  Clock,
   Copy,
   ExternalLink,
   Film,
+  Headphones,
   Loader2,
   Monitor,
   Music,
   PlaySquare,
   Radio,
   RefreshCw,
+  Trash2,
   X,
   ZoomIn,
   ZoomOut,
@@ -32,9 +36,19 @@ import {
   type RemoteInfo,
 } from '../api/client';
 import { useLocale } from '../context/LocaleContext';
+import { useStats } from '../context/StatsContext';
 import type { Locale } from '../i18n';
 
-type SettingsTab = 'appearance' | 'players' | 'remote' | 'tmdb' | 'lastfm';
+type SettingsTab = 'appearance' | 'players' | 'remote' | 'tmdb' | 'lastfm' | 'stats';
+
+function formatListenTime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+}
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -60,7 +74,24 @@ export default function SettingsPanel({
   onTokenChange,
 }: SettingsPanelProps) {
   const { t, locale, setLocale } = useLocale();
+  const { isEnabled: statsEnabled, setIsEnabled: setStatsEnabled, stats, clearStats } = useStats();
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
+
+  const topArtists = useMemo(() => {
+    return Object.values(stats.artists)
+      .sort((a, b) => b.playCount - a.playCount)
+      .slice(0, 5);
+  }, [stats.artists]);
+
+  const topTracks = useMemo(() => {
+    return Object.values(stats.tracks)
+      .sort((a, b) => b.playCount - a.playCount)
+      .slice(0, 5);
+  }, [stats.tracks]);
+
+  const maxArtistPlays = useMemo(() => {
+    return topArtists[0]?.playCount || 1;
+  }, [topArtists]);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -234,6 +265,7 @@ export default function SettingsPanel({
     { id: 'remote' as const, label: t('settings.tabRemote'), icon: Radio },
     { id: 'tmdb' as const, label: t('settings.tabTmdb'), icon: Film },
     { id: 'lastfm' as const, label: t('settings.tabLastfm'), icon: Music },
+    { id: 'stats' as const, label: t('settings.tabStats'), icon: BarChart2 },
   ];
 
   const scalePresets = [
@@ -769,6 +801,200 @@ export default function SettingsPanel({
                 <p className="leading-relaxed">{t('lastfm.howNowPlaying')}</p>
                 <p className="leading-relaxed">{t('lastfm.howScrobble')}</p>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'stats' && (
+            <div className="space-y-6 animate-in fade-in duration-150">
+              {/* Privacy & Opt-in Toggle */}
+              <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold text-primary">
+                      {t('settings.statsTitle')}
+                    </h3>
+                    <p className="text-xs text-secondary leading-relaxed max-w-lg">
+                      {t('settings.statsDesc')}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={statsEnabled}
+                    onClick={() => setStatsEnabled(!statsEnabled)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      statsEnabled ? 'bg-accent' : 'bg-surface-hover ring-1 ring-border'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                        statsEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="pt-2 border-t border-border/40 flex items-center justify-between text-xs text-tertiary">
+                  <span>{t('settings.statsToggle')}</span>
+                  <span className={`font-mono text-[11px] ${statsEnabled ? 'text-accent font-semibold' : 'text-tertiary'}`}>
+                    {statsEnabled ? 'ON' : 'OFF'}
+                  </span>
+                </div>
+              </div>
+
+              {!statsEnabled ? (
+                <div className="rounded-xl border border-dashed border-border p-8 text-center text-xs text-secondary space-y-2">
+                  <Headphones className="h-8 w-8 mx-auto text-tertiary/60" />
+                  <p className="font-medium text-primary">{t('settings.statsDisabledNotice')}</p>
+                </div>
+              ) : (
+                <>
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-xl bg-surface-hover/50 p-4 ring-1 ring-border flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-tertiary mb-2">
+                        <span className="text-xs">{t('settings.statsTotalPlays')}</span>
+                        <PlaySquare className="h-4 w-4 text-accent/80" />
+                      </div>
+                      <div className="text-2xl font-serif text-primary tabular-nums">
+                        {stats.totalPlayCount}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl bg-surface-hover/50 p-4 ring-1 ring-border flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-tertiary mb-2">
+                        <span className="text-xs">{t('settings.statsTotalTime')}</span>
+                        <Clock className="h-4 w-4 text-accent/80" />
+                      </div>
+                      <div className="text-2xl font-serif text-primary tabular-nums">
+                        {formatListenTime(stats.totalListenSeconds)}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl bg-surface-hover/50 p-4 ring-1 ring-border flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-tertiary mb-2">
+                        <span className="text-xs">{t('settings.statsTopArtists')}</span>
+                        <Music className="h-4 w-4 text-accent/80" />
+                      </div>
+                      <div className="text-2xl font-serif text-primary tabular-nums">
+                        {Object.keys(stats.artists).length}
+                      </div>
+                    </div>
+                  </div>
+
+                  {stats.totalPlayCount === 0 ? (
+                    <div className="rounded-xl bg-surface-hover/30 p-8 text-center text-xs text-secondary">
+                      {t('settings.statsNoData')}
+                    </div>
+                  ) : (
+                    <>
+                      {/* Top Artists */}
+                      {topArtists.length > 0 && (
+                        <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-tertiary">
+                            {t('settings.statsTopArtists')}
+                          </h4>
+                          <div className="space-y-2.5">
+                            {topArtists.map((artist, idx) => {
+                              const pct = Math.round((artist.playCount / maxArtistPlays) * 100);
+                              return (
+                                <div key={artist.artist} className="space-y-1">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-primary truncate font-medium">
+                                      <span className="font-mono text-tertiary mr-2">{idx + 1}.</span>
+                                      {artist.artist}
+                                    </span>
+                                    <span className="text-secondary font-mono text-[11px] shrink-0 ml-2">
+                                      {artist.playCount} {t('settings.statsPlaysUnit')}
+                                    </span>
+                                  </div>
+                                  <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-accent rounded-full transition-all"
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Top Tracks */}
+                      {topTracks.length > 0 && (
+                        <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-tertiary">
+                            {t('settings.statsTopTracks')}
+                          </h4>
+                          <div className="divide-y divide-border/40">
+                            {topTracks.map((trk, idx) => (
+                              <div
+                                key={trk.id}
+                                className="flex items-center justify-between py-2 text-xs first:pt-0 last:pb-0"
+                              >
+                                <div className="truncate mr-2">
+                                  <span className="font-mono text-tertiary mr-2">{idx + 1}.</span>
+                                  <span className="text-primary font-medium">{trk.title}</span>
+                                  {trk.artist && (
+                                    <span className="text-secondary ml-1.5">— {trk.artist}</span>
+                                  )}
+                                </div>
+                                <span className="text-secondary font-mono text-[11px] shrink-0">
+                                  {trk.playCount} {t('settings.statsPlaysUnit')}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Recent Plays */}
+                      {stats.recentPlays.length > 0 && (
+                        <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-tertiary">
+                            {t('settings.statsRecentPlays')}
+                          </h4>
+                          <div className="divide-y divide-border/40">
+                            {stats.recentPlays.slice(0, 5).map((rp, idx) => (
+                              <div
+                                key={`${rp.id}-${rp.playedAt}-${idx}`}
+                                className="flex items-center justify-between py-2 text-xs first:pt-0 last:pb-0"
+                              >
+                                <div className="truncate mr-2">
+                                  <span className="text-primary font-medium">{rp.title}</span>
+                                  {rp.artist && (
+                                    <span className="text-secondary ml-1.5">— {rp.artist}</span>
+                                  )}
+                                </div>
+                                <span className="text-tertiary font-mono text-[10px] shrink-0">
+                                  {new Date(rp.playedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Clear Stats */}
+                      <div className="pt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(t('settings.statsClearConfirm'))) {
+                              clearStats();
+                            }
+                          }}
+                          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-status-offline hover:bg-status-offline/10 transition"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>{t('settings.statsClear')}</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>

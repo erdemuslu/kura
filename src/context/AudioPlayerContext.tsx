@@ -12,6 +12,7 @@ import {
   streamUrl,
   type MediaItem,
 } from '../api/client';
+import { useStats } from './StatsContext';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
@@ -64,6 +65,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [isShuffle, setIsShuffle] = useState<boolean>(false);
   const [isQueueOpen, setIsQueueOpen] = useState<boolean>(false);
 
+  const { recordPlay } = useStats();
+  const recordPlayRef = useRef(recordPlay);
+  recordPlayRef.current = recordPlay;
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const trackStartTimeRef = useRef<number>(0);
   const hasScrobbledRef = useRef<boolean>(false);
@@ -79,7 +84,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       const cur = audio.currentTime;
       setCurrentTime(cur);
 
-      // Last.fm Scrobble: Şarkının en az %50'si veya 240 saniyesi dinlendiğinde ve EN AZ 15 saniye dinlendiğinde
+      // Last.fm Scrobble & Dinleme İstatistikleri: Şarkının en az %50'si veya 240 saniyesi dinlendiğinde ve EN AZ 15 saniye dinlendiğinde
       const t = currentTrackRef.current;
       if (t && !hasScrobbledRef.current) {
         const dur = t.duration || audio.duration || 0;
@@ -94,6 +99,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
               t.album,
               dur,
             );
+            recordPlayRef.current(t, Math.round(cur));
           }
         }
       }
@@ -158,6 +164,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
           prev.album,
           prevDur,
         );
+        recordPlayRef.current(prev, Math.round(audio.currentTime));
       }
     }
 
@@ -268,6 +275,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
             t.album,
             dur,
           );
+          recordPlayRef.current(t, Math.round(audio.currentTime || dur));
         }
       }
       nextTrack();

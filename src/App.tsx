@@ -34,6 +34,7 @@ import {
 } from './api/client';
 import { AudioPlayerProvider, useAudioPlayer } from './context/AudioPlayerContext';
 import { FavoritesProvider } from './context/FavoritesContext';
+import { StatsProvider } from './context/StatsContext';
 import { useLocale } from './context/LocaleContext';
 import { categoryDisplayLabel } from './i18n';
 import { resetScrollTop } from './lib/scroll';
@@ -866,9 +867,11 @@ function MainLayout() {
 export default function App() {
   return (
     <FavoritesProvider>
-      <AudioPlayerProvider>
-        <MainLayout />
-      </AudioPlayerProvider>
+      <StatsProvider>
+        <AudioPlayerProvider>
+          <MainLayout />
+        </AudioPlayerProvider>
+      </StatsProvider>
     </FavoritesProvider>
   );
 }
