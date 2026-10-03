@@ -31,6 +31,7 @@ export interface PlaylistContextType {
   isTrackInPlaylist: (playlistId: string, trackFilePath: string) => boolean;
   getPlaylist: (id: string) => Playlist | undefined;
   setPlaylists: (playlists: Playlist[]) => void;
+  importPlaylists: (playlists: Playlist[], mode?: 'merge' | 'replace') => void;
 }
 
 export const PLAYLISTS_STORAGE_KEY = 'kura-playlists';
@@ -164,6 +165,30 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     [savePlaylists],
   );
 
+  const importPlaylists = useCallback(
+    (items: Playlist[], mode: 'merge' | 'replace' = 'merge') => {
+      if (mode === 'replace') {
+        savePlaylists(items);
+        return;
+      }
+      const existingIds = new Set(playlists.map((p) => p.id));
+      const newItems = items.filter((p) => !existingIds.has(p.id));
+      const merged = playlists.map((existing) => {
+        const match = items.find((p) => p.id === existing.id);
+        if (!match) return existing;
+        const trackPaths = new Set(existing.tracks.map((t) => t.filePath));
+        const additionalTracks = match.tracks.filter((t) => !trackPaths.has(t.filePath));
+        return {
+          ...existing,
+          tracks: [...existing.tracks, ...additionalTracks],
+          updatedAt: Date.now(),
+        };
+      });
+      savePlaylists([...merged, ...newItems]);
+    },
+    [playlists, savePlaylists],
+  );
+
   return (
     <PlaylistContext.Provider
       value={{
@@ -176,6 +201,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
         isTrackInPlaylist,
         getPlaylist,
         setPlaylists,
+        importPlaylists,
       }}
     >
       {children}

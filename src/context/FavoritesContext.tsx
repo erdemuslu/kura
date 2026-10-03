@@ -18,6 +18,8 @@ interface FavoritesContextType {
   toggleFavorite: (item: Omit<FavoriteItem, 'createdAt'>) => void;
   removeFavorite: (id: string) => void;
   getFavoritesByType: (type: FavoriteMediaType) => FavoriteItem[];
+  importFavorites: (items: FavoriteItem[], mode?: 'merge' | 'replace') => void;
+  setFavorites: React.Dispatch<React.SetStateAction<FavoriteItem[]>>;
 }
 
 const STORAGE_KEY = 'kura-favorites';
@@ -66,6 +68,15 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
     return favorites.filter((f) => f.mediaType === type);
   };
 
+  const importFavorites = (items: FavoriteItem[], mode: 'merge' | 'replace' = 'merge') => {
+    setFavorites((prev) => {
+      if (mode === 'replace') return items;
+      const existingIds = new Set(prev.map((f) => f.id));
+      const newItems = items.filter((f) => !existingIds.has(f.id));
+      return [...prev, ...newItems];
+    });
+  };
+
   return (
     <FavoritesContext.Provider
       value={{
@@ -74,6 +85,8 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
         toggleFavorite,
         removeFavorite,
         getFavoritesByType,
+        importFavorites,
+        setFavorites,
       }}
     >
       {children}

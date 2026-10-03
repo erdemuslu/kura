@@ -51,7 +51,7 @@ interface StatsContextType {
   stats: StatsData;
   recordPlay: (track: MediaItem, listenedSeconds: number) => void;
   clearStats: () => void;
-  importStats: (data: StatsData) => void;
+  importStats: (data: StatsData, mode?: 'merge' | 'replace') => void;
 }
 
 const StatsContext = createContext<StatsContextType | null>(null);
@@ -183,9 +183,53 @@ export function StatsProvider({ children }: { children: React.ReactNode }) {
     saveStats(DEFAULT_STATS);
   }, [saveStats]);
 
-  const importStats = useCallback((data: StatsData) => {
-    saveStats(data);
-  }, [saveStats]);
+  const importStats = useCallback(
+    (data: StatsData, mode: 'merge' | 'replace' = 'merge') => {
+      if (mode === 'replace') {
+        saveStats(data);
+        return;
+      }
+      setStats((prev) => {
+        const mergedTracks = { ...prev.tracks };
+        for (const [k, trk] of Object.entries(data.tracks || {})) {
+          if (mergedTracks[k]) {
+            mergedTracks[k] = {
+              ...mergedTracks[k]!,
+              playCount: mergedTracks[k]!.playCount + trk.playCount,
+              totalSeconds: mergedTracks[k]!.totalSeconds + trk.totalSeconds,
+              lastPlayedAt: Math.max(mergedTracks[k]!.lastPlayedAt, trk.lastPlayedAt),
+            };
+          } else {
+            mergedTracks[k] = trk;
+          }
+        }
+        const mergedArtists = { ...prev.artists };
+        for (const [k, art] of Object.entries(data.artists || {})) {
+          if (mergedArtists[k]) {
+            mergedArtists[k] = {
+              ...mergedArtists[k]!,
+              playCount: mergedArtists[k]!.playCount + art.playCount,
+              totalSeconds: mergedArtists[k]!.totalSeconds + art.totalSeconds,
+            };
+          } else {
+            mergedArtists[k] = art;
+          }
+        }
+        const newStats: StatsData = {
+          totalPlayCount: prev.totalPlayCount + (data.totalPlayCount || 0),
+          totalListenSeconds: prev.totalListenSeconds + (data.totalListenSeconds || 0),
+          tracks: mergedTracks,
+          artists: mergedArtists,
+          recentPlays: [...(data.recentPlays || []), ...prev.recentPlays].slice(0, 50),
+        };
+        try {
+          localStorage.setItem(STATS_DATA_KEY, JSON.stringify(newStats));
+        } catch {}
+        return newStats;
+      });
+    },
+    [saveStats],
+  );
 
   return (
     <StatsContext.Provider

@@ -1,10 +1,12 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import {
   BarChart2,
   Check,
   ChevronDown,
   Clock,
   Copy,
+  Database,
+  Download,
   ExternalLink,
   Film,
   Headphones,
@@ -15,6 +17,7 @@ import {
   Radio,
   RefreshCw,
   Trash2,
+  Upload,
   X,
   ZoomIn,
   ZoomOut,
@@ -37,9 +40,12 @@ import {
 } from '../api/client';
 import { useLocale } from '../context/LocaleContext';
 import { useStats } from '../context/StatsContext';
+import { useFavorites } from '../context/FavoritesContext';
+import { usePlaylists } from '../context/PlaylistContext';
+import { exportUserData, parseUserDataFile } from '../lib/userData';
 import type { Locale } from '../i18n';
 
-type SettingsTab = 'appearance' | 'players' | 'remote' | 'tmdb' | 'lastfm' | 'stats';
+type SettingsTab = 'appearance' | 'players' | 'remote' | 'tmdb' | 'lastfm' | 'stats' | 'backup';
 
 function formatListenTime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
@@ -74,8 +80,17 @@ export default function SettingsPanel({
   onTokenChange,
 }: SettingsPanelProps) {
   const { t, locale, setLocale } = useLocale();
-  const { isEnabled: statsEnabled, setIsEnabled: setStatsEnabled, stats, clearStats } = useStats();
+  const { favorites, importFavorites } = useFavorites();
+  const { playlists, importPlaylists } = usePlaylists();
+  const { isEnabled: statsEnabled, setIsEnabled: setStatsEnabled, stats, clearStats, importStats } =
+    useStats();
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
+  const [backupFeedback, setBackupFeedback] = useState<{ success: boolean; message: string } | null>(
+    null,
+  );
+  const [isExporting, setIsExporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const topArtists = useMemo(() => {
     return Object.values(stats.artists)
@@ -266,6 +281,7 @@ export default function SettingsPanel({
     { id: 'tmdb' as const, label: t('settings.tabTmdb'), icon: Film },
     { id: 'lastfm' as const, label: t('settings.tabLastfm'), icon: Music },
     { id: 'stats' as const, label: t('settings.tabStats'), icon: BarChart2 },
+    { id: 'backup' as const, label: t('settings.tabBackup'), icon: Database },
   ];
 
   const scalePresets = [
@@ -995,6 +1011,229 @@ export default function SettingsPanel({
                   )}
                 </>
               )}
+            </div>
+          )}
+
+          {activeTab === 'backup' && (
+            <div className="space-y-6 animate-in fade-in duration-150">
+              {/* Overview / Current data status */}
+              <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3">
+                <h3 className="text-sm font-semibold text-primary">
+                  {t('settings.backupTitle')}
+                </h3>
+                <p className="text-xs text-secondary leading-relaxed">
+                  {t('settings.backupDesc')}
+                </p>
+                <div className="pt-2 border-t border-border/40 flex flex-wrap items-center gap-4 text-xs text-tertiary font-mono">
+                  <span>
+                    {favorites.length} {t('common.favorites').toLowerCase()}
+                  </span>
+                  <span>•</span>
+                  <span>
+                    {playlists.length} {t('playlists.title').toLowerCase()}
+                  </span>
+                  <span>•</span>
+                  <span>
+                    {playlists.reduce((sum, p) => sum + p.tracks.length, 0)}{' '}
+                    {t('playlists.trackCount', { n: '' }).trim()}
+                  </span>
+                  {stats && (
+                    <>
+                      <span>•</span>
+                      <span>
+                        {stats.totalPlayCount} {t('settings.statsPlaysUnit')}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Export Section */}
+              <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-primary">
+                    {t('settings.exportButton')}
+                  </h4>
+                  <p className="text-xs text-secondary">
+                    {t('settings.backupDesc')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsExporting(true);
+                    try {
+                      exportUserData({ favorites, playlists, stats });
+                      setBackupFeedback({
+                        success: true,
+                        message: 'Backup downloaded successfully.',
+                      });
+                    } catch (e) {
+                      setBackupFeedback({
+                        success: false,
+                        message: String(e),
+                      });
+                    } finally {
+                      setIsExporting(false);
+                    }
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-semibold text-background hover:bg-accent-hover transition shadow-sm shrink-0"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>{isExporting ? t('settings.exporting') : t('settings.exportButton')}</span>
+                </button>
+              </div>
+
+              {/* Import Section */}
+              <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-primary">
+                    {t('settings.importTitle')}
+                  </h4>
+                  <p className="text-xs text-secondary leading-relaxed">
+                    {t('settings.importDesc')}
+                  </p>
+                </div>
+
+                {/* Import Mode Selection */}
+                <div className="space-y-2 pt-2 border-t border-border/40">
+                  <p className="text-xs font-medium text-secondary">{t('settings.importModeLabel')}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label
+                      className={`flex flex-col p-3 rounded-xl ring-1 cursor-pointer transition ${
+                        importMode === 'merge'
+                          ? 'bg-accent/10 ring-accent'
+                          : 'bg-surface ring-border hover:bg-surface-hover'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="importMode"
+                          value="merge"
+                          checked={importMode === 'merge'}
+                          onChange={() => setImportMode('merge')}
+                          className="accent-accent"
+                        />
+                        <span className="text-xs font-medium text-primary">
+                          {t('settings.importModeMerge')}
+                        </span>
+                      </div>
+                      <span className="mt-1 text-[11px] text-tertiary pl-5">
+                        {t('settings.importModeMergeHint')}
+                      </span>
+                    </label>
+
+                    <label
+                      className={`flex flex-col p-3 rounded-xl ring-1 cursor-pointer transition ${
+                        importMode === 'replace'
+                          ? 'bg-accent/10 ring-accent'
+                          : 'bg-surface ring-border hover:bg-surface-hover'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="importMode"
+                          value="replace"
+                          checked={importMode === 'replace'}
+                          onChange={() => setImportMode('replace')}
+                          className="accent-accent"
+                        />
+                        <span className="text-xs font-medium text-primary">
+                          {t('settings.importModeReplace')}
+                        </span>
+                      </div>
+                      <span className="mt-1 text-[11px] text-tertiary pl-5">
+                        {t('settings.importModeReplaceHint')}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const content = event.target?.result as string;
+                        const res = parseUserDataFile(content);
+                        if (!res.success || !res.data) {
+                          setBackupFeedback({
+                            success: false,
+                            message: t('settings.importInvalidFile'),
+                          });
+                          return;
+                        }
+
+                        if (res.data.favorites) {
+                          importFavorites(res.data.favorites, importMode);
+                        }
+                        if (res.data.playlists) {
+                          importPlaylists(res.data.playlists, importMode);
+                        }
+                        if (res.data.stats) {
+                          importStats(res.data.stats, importMode);
+                        }
+                        if (res.data.categories) {
+                          try {
+                            localStorage.setItem(
+                              'kura-categories',
+                              JSON.stringify(res.data.categories),
+                            );
+                          } catch {}
+                        }
+
+                        setBackupFeedback({
+                          success: true,
+                          message: t('settings.importSuccess', {
+                            fav: res.data.favorites.length,
+                            pl: res.data.playlists.length,
+                          }),
+                        });
+                        if (fileInputRef.current) {
+                          fileInputRef.current.value = '';
+                        }
+                      };
+                      reader.readAsText(file);
+                    }}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 rounded-xl bg-surface hover:bg-surface-hover px-4 py-2.5 text-xs font-medium text-primary ring-1 ring-border transition"
+                  >
+                    <Upload className="h-4 w-4 text-accent" />
+                    <span>{t('settings.importFileButton')}</span>
+                  </button>
+                </div>
+
+                {backupFeedback && (
+                  <div
+                    className={`rounded-xl p-3 text-xs flex items-center justify-between gap-2 ${
+                      backupFeedback.success
+                        ? 'bg-status-online/15 text-status-online ring-1 ring-status-online/30'
+                        : 'bg-status-offline/15 text-status-offline ring-1 ring-status-offline/30'
+                    }`}
+                  >
+                    <span>{backupFeedback.message}</span>
+                    <button
+                      type="button"
+                      onClick={() => setBackupFeedback(null)}
+                      className="p-1 hover:opacity-75"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
