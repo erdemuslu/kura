@@ -333,7 +333,7 @@ function MainLayout() {
   return (
     <div className="min-h-screen bg-background text-primary selection:bg-accent/20 selection:text-accent">
       {/* 1. Üst Bar — Sabit & Blur (Masaüstü 56px, Mobilde ferah ve kompakt) */}
-      <header className="sticky top-0 z-30 border-b border-border bg-surface/85 backdrop-blur-xl transition-colors">
+      <header className="sticky top-0 z-40 border-b border-border bg-surface/95 backdrop-blur-2xl transition-colors shadow-sm">
         <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between px-4 sm:px-8 lg:px-12">
           {/* Sol: Logo + (Masaüstü) Sekmeler */}
           <div className="flex items-center gap-4 md:gap-8">
