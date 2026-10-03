@@ -1202,15 +1202,16 @@ export default function NowPlayingModal({
           </span>
         </div>
 
-        {/* Sağ: Ses İkonu + 120px Kaydırıcı (Fare tekerleği destekli) */}
+        {/* Sağ: Ses İkonu + Kaydırıcı (Fare tekerleği destekli) */}
         <div
           onWheel={handleVolumeWheel}
-          className="flex items-center gap-2.5"
+          className="flex items-center gap-2"
           title={t('player.volumeHint')}
         >
           <button
             type="button"
             onClick={onToggleMute}
+            title={isMuted ? t('player.unmute') : t('player.mute')}
             className="p-1 text-white/50 hover:text-white transition"
           >
             {isMuted || volume === 0 ? (
@@ -1220,26 +1221,15 @@ export default function NowPlayingModal({
             )}
           </button>
 
-          <div
-            className="group relative h-[3px] hover:h-[5px] w-[120px] bg-white/[0.15] rounded-full cursor-pointer transition-all"
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-              onSetVolume(pos);
-            }}
-          >
-            {/* Ses Dolgusu */}
-            <div
-              className="h-full rounded-full bg-white transition-all duration-75"
-              style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
-            />
-
-            {/* 12px Daire Tutamak */}
-            <div
-              className="absolute -top-[4.5px] h-3 w-3 -translate-x-1/2 rounded-full bg-white shadow pointer-events-none"
-              style={{ left: `${(isMuted ? 0 : volume) * 100}%` }}
-            />
-          </div>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.02}
+            value={isMuted ? 0 : volume}
+            onChange={(e) => onSetVolume(Number(e.target.value))}
+            className="h-1 w-24 sm:w-28 cursor-pointer appearance-none rounded-lg bg-white/20 accent-accent hover:opacity-100 opacity-80 transition"
+          />
         </div>
       </footer>
     </div>

@@ -99,6 +99,12 @@ export default function AudioPlayerBar() {
     seek(ratio * currentDuration);
   };
 
+  const handleVolumeWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.04 : -0.04;
+    setVolume(Math.max(0, Math.min(1, volume + delta)));
+  };
+
   return (
     <>
       {/* Tam Ekran Şimdi Çalıyor Görünümü */}
@@ -407,7 +413,11 @@ export default function AudioPlayerBar() {
             </div>
 
             {/* Ses Kontrolü (sm ve üzeri) */}
-            <div className="hidden sm:flex items-center gap-1.5">
+            <div
+              onWheel={handleVolumeWheel}
+              className="hidden sm:flex items-center gap-1.5"
+              title={t('player.volumeHint')}
+            >
               <button
                 type="button"
                 onClick={toggleMute}
