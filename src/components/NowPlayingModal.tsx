@@ -225,6 +225,7 @@ export default function NowPlayingModal({
   const [isTitleAnimating, setIsTitleAnimating] = useState(false);
 
   const activeLyricsLineRef = useRef<HTMLDivElement | null>(null);
+  const currentQueueItemRef = useRef<HTMLDivElement | null>(null);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -330,6 +331,16 @@ export default function NowPlayingModal({
       });
     }
   }, [activeLyricIndex, activeTab]);
+
+  // Sıradaki sekmesinde çalan şarkıyı yumuşakça görünür alana kaydır
+  useEffect(() => {
+    if (activeTab === 'queue' && currentQueueItemRef.current) {
+      currentQueueItemRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    }
+  }, [track?.file_path, activeTab]);
 
   // Sakin mod zamanlayıcısı (4s -> calm, 10s -> deep)
   useEffect(() => {
@@ -497,10 +508,20 @@ export default function NowPlayingModal({
     currentDuration > 0 ? Math.min(100, (currentTime / currentDuration) * 100) : 0;
   const quality = getAudioQualityInfo(track);
 
-  // Sıradaki liste: çalan şarkı tekrar gösterilmez, bir sonrakinden başlar
-  const upcomingQueue = queue.slice(queueIndex + 1);
+  // Sıradaki liste: albümün / sıranın tüm parçaları listelenir
+  const fullQueue =
+    queue.length > 1
+      ? queue
+      : albumTracks.length > 0
+        ? albumTracks
+        : queue;
 
-  // Albüm toplam süresi
+  const currentIdx =
+    queue.length > 1 && queueIndex >= 0 && queueIndex < queue.length
+      ? queueIndex
+      : fullQueue.findIndex((t) => t.file_path === track.file_path);
+
+  const totalQueueDuration = fullQueue.reduce((acc, t) => acc + (t.duration || 0), 0);
   const totalAlbumDuration = albumTracks.reduce((acc, t) => acc + (t.duration || 0), 0);
 
   // İlerleme çubuğu tıklama / hover
@@ -611,9 +632,9 @@ export default function NowPlayingModal({
             title={t('player.upNextKey')}
           >
             <span>{t('player.upNext')}</span>
-            {upcomingQueue.length > 0 && (
+            {fullQueue.length > 0 && (
               <span className="font-mono text-[10px] opacity-60">
-                {upcomingQueue.length}
+                {fullQueue.length}
               </span>
             )}
           </button>
@@ -1003,33 +1024,84 @@ export default function NowPlayingModal({
                 }}
                 className="mt-2 h-44 overflow-y-auto pr-1"
               >
-                {/* 1. SIRADAKİ SEKME: ÇALAN ŞARKI GÖSTERİLMEZ, BİR SONRAKİNDEN BAŞLAR */}
+                {/* 1. SIRADAKİ (KUYRUK) SEKME: ALBÜMÜN / KUYRUĞUN TÜM ŞARKILARI + ÇALAN ŞARKIDA BAR ANİMASYONU */}
                 {activeTab === 'queue' && (
                   <div className="space-y-0.5">
-                    {upcomingQueue.length > 0 ? (
-                      upcomingQueue.map((item, idx) => {
-                        const actualIdx = queueIndex + 1 + idx;
+                    {fullQueue.length > 0 ? (
+                      fullQueue.map((item, idx) => {
+                        const isCurrent =
+                          item.file_path === track.file_path || idx === currentIdx;
                         return (
                           <div
-                            key={`${item.file_path}-${actualIdx}`}
-                            onClick={() => onPlayQueueItem(actualIdx)}
-                            className="group flex h-10 items-center justify-between gap-3 px-2 rounded hover:bg-white/[0.04] text-xs cursor-pointer transition-colors"
+                            key={`${item.file_path}-${idx}`}
+                            ref={isCurrent ? currentQueueItemRef : null}
+                            onClick={() => {
+                              if (queue.length > 0 && queue.length === fullQueue.length) {
+                                onPlayQueueItem(idx);
+                              } else {
+                                onPlayTrack?.(item, fullQueue);
+                              }
+                            }}
+                            className={`group flex h-10 items-center justify-between gap-3 px-2 rounded hover:bg-white/[0.04] text-xs cursor-pointer transition-colors ${
+                              isCurrent ? 'bg-white/[0.04] font-medium' : ''
+                            }`}
                           >
-                            <span className="w-6 text-left font-mono text-[11px] text-white/40">
-                              {String(actualIdx + 1).padStart(2, '0')}
+                            <span className="w-6 flex items-center justify-start">
+                              {isCurrent ? (
+                                <span className="flex items-end gap-[2px] h-3 w-3">
+                                  <span
+                                    className={`w-[2px] rounded-full ${
+                                      isPlaying
+                                        ? 'animate-[equalizer_0.8s_ease-in-out_infinite]'
+                                        : 'h-1.5'
+                                    }`}
+                                    style={{ backgroundColor: accent.accent }}
+                                  />
+                                  <span
+                                    className={`w-[2px] rounded-full ${
+                                      isPlaying
+                                        ? 'animate-[equalizer_0.8s_ease-in-out_0.2s_infinite]'
+                                        : 'h-3'
+                                    }`}
+                                    style={{ backgroundColor: accent.accent }}
+                                  />
+                                  <span
+                                    className={`w-[2px] rounded-full ${
+                                      isPlaying
+                                        ? 'animate-[equalizer_0.8s_ease-in-out_0.4s_infinite]'
+                                        : 'h-2'
+                                    }`}
+                                    style={{ backgroundColor: accent.accent }}
+                                  />
+                                </span>
+                              ) : (
+                                <span className="font-mono text-[11px] text-white/40 group-hover:text-white/70">
+                                  {String(idx + 1).padStart(2, '0')}
+                                </span>
+                              )}
                             </span>
-                            <span className="flex-1 truncate text-white/90">
+
+                            <span
+                              className="flex-1 truncate transition-colors"
+                              style={
+                                isCurrent
+                                  ? { color: accent.accent, fontWeight: 600 }
+                                  : { color: 'rgba(255,255,255,0.9)' }
+                              }
+                            >
                               {item.title}
                             </span>
+
                             <span className="font-mono text-[11px] text-white/40">
                               {formatDuration(item.duration)}
                             </span>
-                            {onRemoveFromQueue && (
+
+                            {!isCurrent && onRemoveFromQueue && queue.length === fullQueue.length && (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onRemoveFromQueue(actualIdx);
+                                  onRemoveFromQueue(idx);
                                 }}
                                 className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-white transition"
                                 title={t('player.remove')}
@@ -1044,6 +1116,11 @@ export default function NowPlayingModal({
                       <div className="flex h-32 items-center justify-center text-xs font-mono text-white/40">
                         {t('music.queueAutoContinue', { artist: track.artist || t('music.artistFallback') })}
                         {track.album ? `, ${track.album}` : ''}
+                      </div>
+                    )}
+                    {fullQueue.length > 0 && (
+                      <div className="pt-2 text-right font-mono text-[11px] text-white/35">
+                        {t('music.songCount', { n: fullQueue.length })} · {formatDuration(totalQueueDuration)}
                       </div>
                     )}
                   </div>
@@ -1100,7 +1177,7 @@ export default function NowPlayingModal({
                     })}
                     {albumTracks.length > 0 && (
                       <div className="pt-2 text-right font-mono text-[11px] text-white/35">
-                        {albumTracks.length} şarkı · {formatDuration(totalAlbumDuration)}
+                        {t('music.songCount', { n: albumTracks.length })} · {formatDuration(totalAlbumDuration)}
                       </div>
                     )}
                   </div>

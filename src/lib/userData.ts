@@ -11,6 +11,7 @@ export interface KuraUserDataExport {
     playlists: Playlist[];
     stats?: StatsData;
     categories?: unknown;
+    theme?: string;
   };
 }
 
@@ -34,6 +35,7 @@ export function exportUserData(payload: {
       playlists: payload.playlists,
       stats: payload.stats,
       categories,
+      theme: localStorage.getItem('kura-theme') || undefined,
     },
   };
 
@@ -73,6 +75,7 @@ export function parseUserDataFile(fileContent: string): ParseResult {
     const playlists = Array.isArray(data.playlists) ? data.playlists : [];
     const stats = data.stats && typeof data.stats === 'object' ? data.stats : undefined;
     const categories = Array.isArray(data.categories) ? data.categories : undefined;
+    const theme = typeof data.theme === 'string' ? data.theme : undefined;
 
     return {
       success: true,
@@ -81,6 +84,7 @@ export function parseUserDataFile(fileContent: string): ParseResult {
         playlists,
         stats,
         categories,
+        theme,
       },
       summary: {
         favoritesCount: favorites.length,

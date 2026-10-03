@@ -99,7 +99,6 @@ function MainLayout() {
     categories.find((c) => c.id === activeCatId) || categories[0] || DEFAULT_CATEGORIES[0];
 
   const [query, setQuery] = useState('');
-  const [audioPlayer, setAudioPlayer] = useState('in_app');
   const [videoPlayer, setVideoPlayer] = useState('in_app');
   const [activeVideo, setActiveVideo] = useState<VideoPlayerItem | null>(null);
   const [playingPath, setPlayingPath] = useState<string | null>(null);
@@ -164,9 +163,6 @@ function MainLayout() {
 
   // Oynatıcı ayarlarını ve arayüz ölçeğini yükle
   useEffect(() => {
-    getPlayerSetting('audio')
-      .then((p) => setAudioPlayer(p))
-      .catch(() => {});
     getPlayerSetting('video')
       .then((p) => setVideoPlayer(p))
       .catch(() => {});
@@ -699,7 +695,6 @@ function MainLayout() {
         {activeCategory.mediaType === 'music' && (
           <MusicView
             key={activeCategory.id}
-            player={audioPlayer}
             query={query}
             playingPath={playingPath}
             onPlayed={handleMusicPlayed}
@@ -839,9 +834,7 @@ function MainLayout() {
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
         remote={remote}
-        audioPlayer={audioPlayer}
         videoPlayer={videoPlayer}
-        onAudioPlayerChange={setAudioPlayer}
         onVideoPlayerChange={setVideoPlayer}
         onAuthChange={(enabled) =>
           setRemote((r) => (r ? { ...r, auth_enabled: enabled } : r))

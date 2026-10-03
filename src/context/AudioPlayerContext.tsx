@@ -30,6 +30,7 @@ export interface AudioPlayerContextType {
   isQueueOpen: boolean;
   playTrack: (track: MediaItem, newQueue?: MediaItem[]) => void;
   playQueue: (tracks: MediaItem[], startIndex?: number) => void;
+  addToQueue: (tracks: MediaItem | MediaItem[]) => void;
   togglePlay: () => void;
   pause: () => void;
   resume: () => void;
@@ -313,6 +314,22 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     [loadAndPlay],
   );
 
+  const addToQueue = useCallback(
+    (tracks: MediaItem | MediaItem[]) => {
+      const items = Array.isArray(tracks) ? tracks : [tracks];
+      if (items.length === 0) return;
+      setQueue((prev) => {
+        if (prev.length === 0 || !currentTrackRef.current) {
+          setQueueIndex(0);
+          loadAndPlay(items[0]!);
+          return items;
+        }
+        return [...prev, ...items];
+      });
+    },
+    [loadAndPlay],
+  );
+
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -435,6 +452,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         isQueueOpen,
         playTrack,
         playQueue,
+        addToQueue,
         togglePlay,
         pause,
         resume,

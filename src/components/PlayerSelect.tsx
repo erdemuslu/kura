@@ -1,27 +1,27 @@
-import { AUDIO_PLAYERS, VIDEO_PLAYERS } from '../api/client';
+import { VIDEO_PLAYERS } from '../api/client';
 import { useLocale } from '../context/LocaleContext';
 
 interface PlayerSelectProps {
   value: string;
-  kind?: 'audio' | 'video';
+  kind?: 'video';
   onChange: (value: string) => void;
 }
 
 /** Hedef oynatıcı seçici (medya türüne göre uygun oynatıcı listesi). */
-export default function PlayerSelect({ value, kind = 'audio', onChange }: PlayerSelectProps) {
+export default function PlayerSelect({ value, onChange }: PlayerSelectProps) {
   const { t } = useLocale();
-  const options = kind === 'video' ? VIDEO_PLAYERS : AUDIO_PLAYERS;
+  const options = VIDEO_PLAYERS;
 
   return (
-    <label className="flex items-center gap-2 text-sm text-slate-300">
+    <label className="flex items-center gap-2 text-xs text-secondary">
       <span className="hidden shrink-0 sm:inline">{t('players.label')}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-100 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400"
+        className="rounded-lg bg-surface px-2.5 py-1.5 text-xs text-primary ring-1 ring-border hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-accent transition cursor-pointer"
       >
         {options.map((p) => (
-          <option key={p.id} value={p.id}>
+          <option key={p.id} value={p.id} className="bg-surface text-primary">
             {p.labelKey ? t(p.labelKey) : p.label}
           </option>
         ))}

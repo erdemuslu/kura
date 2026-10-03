@@ -732,7 +732,9 @@ export default function VideoPlayerModal({
           setIsBuffering(false);
           setHasError(true);
         }}
-        className="absolute inset-0 h-full w-full object-contain"
+        className={`absolute inset-0 h-full w-full object-contain ${
+          !controlsVisible && isPlaying ? 'cursor-none' : 'cursor-pointer'
+        }`}
       />
 
       {/* 2. Özel Altyazı Katmanı (Merkezi, Şık ve Ayarlanabilir) */}

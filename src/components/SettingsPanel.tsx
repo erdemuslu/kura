@@ -13,6 +13,7 @@ import {
   Loader2,
   Monitor,
   Music,
+  Palette,
   PlaySquare,
   Radio,
   RefreshCw,
@@ -23,7 +24,6 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import {
-  AUDIO_PLAYERS,
   completeLastFmAuth,
   disconnectLastFm,
   getLastFmStatus,
@@ -39,6 +39,7 @@ import {
   type RemoteInfo,
 } from '../api/client';
 import { useLocale } from '../context/LocaleContext';
+import { useTheme, type ThemeId } from '../context/ThemeContext';
 import { useStats } from '../context/StatsContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { usePlaylists } from '../context/PlaylistContext';
@@ -60,9 +61,7 @@ interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
   remote: RemoteInfo | null;
-  audioPlayer: string;
   videoPlayer: string;
-  onAudioPlayerChange: (player: string) => void;
   onVideoPlayerChange: (player: string) => void;
   onAuthChange: (enabled: boolean) => void;
   onTokenChange: (token: string) => void;
@@ -72,14 +71,13 @@ export default function SettingsPanel({
   isOpen,
   onClose,
   remote,
-  audioPlayer,
   videoPlayer,
-  onAudioPlayerChange,
   onVideoPlayerChange,
   onAuthChange,
   onTokenChange,
 }: SettingsPanelProps) {
   const { t, locale, setLocale } = useLocale();
+  const { theme, setTheme, themes } = useTheme();
   const { favorites, importFavorites } = useFavorites();
   const { playlists, importPlaylists } = usePlaylists();
   const { isEnabled: statsEnabled, setIsEnabled: setStatsEnabled, stats, clearStats, importStats } =
@@ -211,11 +209,6 @@ export default function SettingsPanel({
 
   if (!isOpen) return null;
 
-  const handleAudioChange = async (val: string) => {
-    onAudioPlayerChange(val);
-    await setPlayerSetting('audio', val);
-  };
-
   const handleVideoChange = async (val: string) => {
     onVideoPlayerChange(val);
     await setPlayerSetting('video', val);
@@ -298,64 +291,185 @@ export default function SettingsPanel({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-surface p-7 sm:p-8 shadow-2xl ring-1 ring-border relative animate-in zoom-in-95 duration-200"
+        className="w-full max-w-[960px] h-[640px] max-h-[90vh] flex flex-col md:flex-row rounded-2xl bg-surface shadow-2xl ring-1 ring-border relative animate-in zoom-in-95 duration-200 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-6 top-6 rounded-lg p-2 text-tertiary hover:text-primary hover:bg-surface-hover transition"
-          title={t('common.closeEsc')}
-        >
-          <X className="h-5 w-5" />
-        </button>
-
-        <div className="flex items-center gap-3.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 text-accent ring-1 ring-accent/30 shadow-sm shrink-0">
-            <span className="text-[15px] font-serif font-medium leading-none select-none">
-              蔵
-            </span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-serif text-2xl font-normal text-primary tracking-tight">
-                {t('common.settings')}
-              </h2>
-              <span className="rounded-md bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent tracking-wider uppercase font-medium">
-                {t('common.brandBadge')}
-              </span>
+        {/* SOL PANEL (Sidebar) */}
+        <aside className="w-full md:w-60 lg:w-64 shrink-0 flex flex-col justify-between bg-surface-hover/30 border-b md:border-b-0 md:border-r border-border p-4 sm:p-5 select-none">
+          <div className="space-y-5">
+            {/* Header */}
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/15 text-accent ring-1 ring-accent/30 shadow-sm shrink-0">
+                <span className="text-[14px] font-serif font-medium leading-none select-none">
+                  蔵
+                </span>
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h2 className="font-serif text-lg font-medium text-primary tracking-tight">
+                    {t('common.settings')}
+                  </h2>
+                  <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[9px] text-accent tracking-wider uppercase font-semibold">
+                    {t('common.brandBadge')}
+                  </span>
+                </div>
+                <p className="text-[11px] text-tertiary truncate">{t('common.brandFull')}</p>
+              </div>
             </div>
-            <p className="mt-0.5 text-xs text-secondary">{t('settings.subtitle')}</p>
+
+            {/* Dikey Tab Listesi (Masaüstünde dikey, mobilde yatay kaydırma) */}
+            <nav className="flex md:flex-col overflow-x-auto md:overflow-x-visible pb-1 md:pb-0 gap-1 scrollbar-none">
+              {SETTINGS_TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition shrink-0 md:shrink w-auto md:w-full text-left cursor-pointer ${
+                      isActive
+                        ? 'bg-accent text-background font-semibold shadow-sm'
+                        : 'text-secondary hover:text-primary hover:bg-surface-hover/80'
+                    }`}
+                  >
+                    <Icon
+                      className={`h-4 w-4 shrink-0 ${isActive ? 'text-background' : 'text-tertiary'}`}
+                    />
+                    <span className="truncate">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
           </div>
-        </div>
 
-        <div className="flex flex-wrap border-b border-border mt-6 gap-2 sm:gap-3">
-          {SETTINGS_TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium border-b-2 transition -mb-px ${
-                  isActive
-                    ? 'border-accent text-primary font-semibold'
-                    : 'border-transparent text-tertiary hover:text-secondary hover:border-border'
-                }`}
-              >
-                <Icon className={`h-4 w-4 ${isActive ? 'text-accent' : 'text-tertiary'}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
+          {/* Sol Panel Alt Bilgi */}
+          <div className="hidden md:flex items-center justify-between pt-4 border-t border-border/60 text-[11px] text-tertiary font-mono">
+            <span>{t('common.brand')}</span>
+            <span className="text-secondary/70">v0.2.1</span>
+          </div>
+        </aside>
 
-        <div className="flex-1 overflow-y-auto py-6 space-y-6 pr-1">
+        {/* SAĞ PANEL (İçerik) */}
+        <section className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-surface">
+          {/* Üst Bar: Aktif Tab Başlığı + Kapat Butonu */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border/60 shrink-0">
+            <div>
+              <h3 className="text-sm font-semibold text-primary">
+                {SETTINGS_TABS.find((t) => t.id === activeTab)?.label}
+              </h3>
+              <p className="text-xs text-secondary mt-0.5">
+                {t('settings.subtitle')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-tertiary hover:text-primary hover:bg-surface-hover transition cursor-pointer"
+              title={t('common.closeEsc')}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Kaydırılabilir İçerik Alanı */}
+          <div className="flex-1 overflow-y-auto p-6 sm:p-7 space-y-6">
           {activeTab === 'appearance' && (
             <div className="space-y-6 animate-in fade-in duration-150">
+              {/* Theme Selection */}
+              <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/15 text-accent shrink-0 ring-1 ring-accent/30">
+                    <Palette className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-primary">
+                      {t('settings.themeTitle')}
+                    </h3>
+                    <p className="text-xs text-secondary mt-0.5">{t('settings.themeDesc')}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {themes.map((th) => {
+                    const isSelected = theme === th.id;
+                    return (
+                      <button
+                        key={th.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={isSelected}
+                        onClick={() => setTheme(th.id)}
+                        className={`group relative flex flex-col rounded-xl p-3 text-left transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-surface ring-2 ring-accent shadow-md'
+                            : 'bg-surface/60 hover:bg-surface ring-1 ring-border hover:ring-border-hover'
+                        }`}
+                      >
+                        {/* Renk Önizleme Paleti (Miniature Window Swatch) */}
+                        <div
+                          className="relative h-16 w-full rounded-lg overflow-hidden border border-white/10 flex flex-col justify-between p-2 shadow-inner"
+                          style={{ backgroundColor: th.preview.bg }}
+                        >
+                          <div className="flex items-center justify-between">
+                            {/* Pencere Noktaları */}
+                            <div className="flex items-center gap-1 opacity-70">
+                              <span className="h-1.5 w-1.5 rounded-full bg-red-500/80" />
+                              <span className="h-1.5 w-1.5 rounded-full bg-yellow-500/80" />
+                              <span className="h-1.5 w-1.5 rounded-full bg-green-500/80" />
+                            </div>
+                            {/* Vurgu Rengi Rozeti */}
+                            <span
+                              className="h-2.5 w-2.5 rounded-full ring-1 ring-white/20 shadow-sm"
+                              style={{ backgroundColor: th.preview.accent }}
+                            />
+                          </div>
+
+                          {/* Mini Gövde: Kart + Metin + Vurgu butonu */}
+                          <div
+                            className="rounded p-1.5 flex items-center justify-between shadow-sm"
+                            style={{ backgroundColor: th.preview.surface }}
+                          >
+                            <span
+                              className="h-1.5 w-10 rounded-full"
+                              style={{ backgroundColor: th.preview.text, opacity: 0.8 }}
+                            />
+                            <span
+                              className="h-2 w-4 rounded-full"
+                              style={{ backgroundColor: th.preview.accent }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Tema Bilgisi */}
+                        <div className="mt-2.5 flex items-center justify-between gap-1">
+                          <p
+                            className={`text-xs font-semibold truncate ${
+                              isSelected ? 'text-accent' : 'text-primary'
+                            }`}
+                          >
+                            {t(th.nameKey)}
+                          </p>
+                          {isSelected && (
+                            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent text-background">
+                              <Check className="h-2.5 w-2.5 stroke-[3]" />
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 line-clamp-1 text-[10px] text-tertiary">
+                          {t(th.descKey)}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Language */}
               <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-4">
                 <div>
@@ -464,39 +578,6 @@ export default function SettingsPanel({
 
           {activeTab === 'players' && (
             <div className="space-y-5 animate-in fade-in duration-150">
-              <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/15 text-accent shrink-0">
-                    <Music className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-primary">{t('players.audioTitle')}</h3>
-                    <p className="text-xs text-secondary mt-0.5">{t('players.audioDesc')}</p>
-                  </div>
-                </div>
-
-                <div className="relative pt-1">
-                  <select
-                    value={audioPlayer}
-                    onChange={(e) => handleAudioChange(e.target.value)}
-                    className="h-12 w-full appearance-none rounded-xl bg-surface px-4 py-3 pr-11 text-sm font-medium text-primary ring-1 ring-border transition cursor-pointer hover:bg-surface-active focus:outline-none focus:ring-2 focus:ring-accent"
-                  >
-                    {AUDIO_PLAYERS.map((p) => (
-                      <option key={p.id} value={p.id} className="bg-surface py-2 text-primary">
-                        {p.labelKey ? t(p.labelKey) : p.label}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-tertiary" />
-                </div>
-
-                <p className="text-[11px] text-tertiary pt-1">
-                  {audioPlayer === 'in_app'
-                    ? t('players.audioInAppHint')
-                    : t('players.audioExternalHint', { app: audioPlayer })}
-                </p>
-              </div>
-
               <div className="rounded-xl bg-surface-hover/50 p-5 ring-1 ring-border space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface text-secondary shrink-0 ring-1 ring-border">
@@ -1189,6 +1270,10 @@ export default function SettingsPanel({
                             );
                           } catch {}
                         }
+                        const backupTheme = res.data?.theme;
+                        if (backupTheme && themes.some((th) => th.id === backupTheme)) {
+                          setTheme(backupTheme as ThemeId);
+                        }
 
                         setBackupFeedback({
                           success: true,
@@ -1236,25 +1321,20 @@ export default function SettingsPanel({
               </div>
             </div>
           )}
-        </div>
-
-        {error && <p className="text-xs text-status-offline">{error}</p>}
-
-        <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-tertiary text-[11px] font-mono select-none">
-            <span className="font-serif text-accent/80 text-[13px]">蔵</span>
-            <span>{t('common.brand')}</span>
-            <span className="text-border">·</span>
-            <span>{t('common.brandFull')}</span>
+            {error && <p className="text-xs text-status-offline">{error}</p>}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl bg-surface-hover px-5 py-2.5 text-xs font-medium text-primary hover:bg-border transition"
-          >
-            {t('common.ok')}
-          </button>
-        </div>
+
+          {/* Alt Kapanış Butonu Barı */}
+          <div className="px-6 py-3.5 border-t border-border/60 flex items-center justify-end bg-surface-hover/20 shrink-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl bg-surface-hover px-5 py-2 text-xs font-medium text-primary hover:bg-border transition cursor-pointer"
+            >
+              {t('common.done')}
+            </button>
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 [package]
 name = "kura"
-version = "0.2.0"
+version = "0.2.1"
 description = "Personal local media archive and remote launcher for movies, series, and music"
 edition = "2021"
 

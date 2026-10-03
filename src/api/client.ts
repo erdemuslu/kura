@@ -139,16 +139,6 @@ export interface PlayerOption {
   isVideo?: boolean;
 }
 
-export const AUDIO_PLAYERS: PlayerOption[] = [
-  { id: 'in_app', label: 'Built-in Player', labelKey: 'players.audioInApp' },
-  { id: 'system', label: 'System Default', labelKey: 'players.systemDefault' },
-  { id: 'Audirvana', label: 'Audirvana' },
-  { id: 'foobar2000', label: 'foobar2000' },
-  { id: 'VLC', label: 'VLC' },
-  { id: 'IINA', label: 'IINA' },
-  { id: 'QuickTime Player', label: 'QuickTime Player' },
-];
-
 export const VIDEO_PLAYERS: PlayerOption[] = [
   { id: 'in_app', label: 'Kura (Built-in / In-App)', labelKey: 'players.videoInApp' },
   { id: 'system', label: 'System Default', labelKey: 'players.systemDefault' },
@@ -157,7 +147,7 @@ export const VIDEO_PLAYERS: PlayerOption[] = [
   { id: 'QuickTime Player', label: 'QuickTime Player' },
 ];
 
-export const PLAYERS = AUDIO_PLAYERS;
+export const PLAYERS = VIDEO_PLAYERS;
 
 export function isRunningInTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;

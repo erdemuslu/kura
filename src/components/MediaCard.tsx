@@ -15,6 +15,7 @@ export interface MediaCardProps {
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
   onClick: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   onPlayHover?: () => void;
   playHoverLoading?: boolean;
   menuActions?: { label: string; onClick: () => void; disabled?: boolean }[];
@@ -42,6 +43,7 @@ export default function MediaCard({
   isFavorite = false,
   onToggleFavorite,
   onClick,
+  onContextMenu,
   onPlayHover,
   playHoverLoading = false,
   menuActions,
@@ -55,7 +57,11 @@ export default function MediaCard({
   const hasCover = Boolean(coverUrl && !imgError);
 
   return (
-    <div className="group/card flex flex-col cursor-pointer select-none" onClick={onClick}>
+    <div
+      className="group/card flex flex-col cursor-pointer select-none"
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+    >
       {/* Görsel Taşıyıcı */}
       <div
         className={`relative w-full overflow-hidden rounded-[6px] bg-surface transition-all duration-200 ease-out group-hover/card:scale-[1.02] group-hover/card:shadow-[0_12px_32px_-12px_rgba(0,0,0,0.65)] ${
@@ -103,33 +109,43 @@ export default function MediaCard({
           </div>
         )}
 
-        {/* Hover Oynat Butonu */}
+        {/* Hover / Responsive Oynat Butonu */}
         {onPlayHover && (
-          <div
-            className="absolute inset-0 z-10 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity duration-150"
-            onClick={(e) => {
-              e.stopPropagation();
-              onPlayHover();
-            }}
-          >
+          <div className="absolute inset-0 z-10 pointer-events-none">
             {aspect === '1:1' ? (
-              // Albümlerde sağ altta amber buton
-              <div className="absolute right-2.5 bottom-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-background shadow-lg transition-transform hover:scale-105 active:scale-95">
+              // Albümlerde sağ altta amber buton: Mobilde görünür, masaüstünde hover'da görünür
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPlayHover();
+                }}
+                title={t('player.play')}
+                className="pointer-events-auto absolute right-2.5 bottom-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-background shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 max-sm:opacity-100 max-sm:translate-y-0 sm:opacity-0 sm:translate-y-1 sm:group-hover/card:opacity-100 sm:group-hover/card:translate-y-0"
+              >
                 {playHoverLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin text-background" />
                 ) : (
                   <Play className="h-4 w-4 fill-current ml-0.5" />
                 )}
-              </div>
+              </button>
             ) : (
               // Filmlerde ortada yarı saydam zarif daire
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-primary shadow-xl backdrop-blur-md transition-transform hover:scale-110 active:scale-95 hover:bg-accent hover:text-background">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPlayHover();
+                }}
+                title={t('player.play')}
+                className="pointer-events-auto absolute inset-0 m-auto flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-primary shadow-xl backdrop-blur-md transition-all duration-200 hover:scale-110 active:scale-95 hover:bg-accent hover:text-background max-sm:opacity-100 sm:opacity-0 sm:group-hover/card:opacity-100"
+              >
                 {playHoverLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   <Play className="h-5 w-5 fill-current ml-0.5" />
                 )}
-              </div>
+              </button>
             )}
           </div>
         )}

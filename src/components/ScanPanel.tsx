@@ -61,7 +61,7 @@ export default function ScanPanel() {
   };
 
   return (
-    <section className="rounded-xl bg-slate-800/60 p-4 ring-1 ring-slate-700">
+    <section className="rounded-xl bg-surface p-4 ring-1 ring-border">
       <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row">
         <div className="flex min-w-0 flex-1 gap-2">
           <input
@@ -69,7 +69,7 @@ export default function ScanPanel() {
             value={path}
             onChange={(e) => setPath(e.target.value)}
             placeholder={t('scan.panelPathPlaceholder')}
-            className="min-w-0 flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400"
+            className="min-w-0 flex-1 rounded-lg bg-surface-hover px-3 py-2 text-sm text-primary ring-1 ring-border placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent"
           />
           {isRunningInTauri() && (
             <button
@@ -77,7 +77,7 @@ export default function ScanPanel() {
               onClick={onBrowse}
               disabled={browsing}
               title={t('common.browseEllipsis')}
-              className="shrink-0 rounded-lg bg-slate-700 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-600 transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="shrink-0 rounded-lg bg-surface-hover px-3 py-2 text-sm text-secondary ring-1 ring-border transition hover:bg-surface-active hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
             >
               {browsing ? '…' : t('common.browseEllipsis')}
             </button>
@@ -88,19 +88,19 @@ export default function ScanPanel() {
           value={diskLabel}
           onChange={(e) => setDiskLabel(e.target.value)}
           placeholder={t('scan.panelDiskPlaceholder')}
-          className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400 sm:w-52"
+          className="w-full rounded-lg bg-surface-hover px-3 py-2 text-sm text-primary ring-1 ring-border placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent sm:w-52"
         />
         <button
           type="submit"
           disabled={scan.isPending || !path.trim()}
-          className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-background transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50 shadow"
         >
           {scan.isPending ? t('scan.scanning') : t('scan.action')}
         </button>
       </form>
 
       {scan.isPending && progress && (
-        <p className="mt-2 text-sm text-sky-300">
+        <p className="mt-2 text-sm text-accent">
           {t('scan.progressLive', {
             n: progress.scanned_files,
             m: progress.indexed,

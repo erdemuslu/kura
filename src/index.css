@@ -43,7 +43,156 @@ body {
 /* İnce kaydırma çubuğu */
 * {
   scrollbar-width: thin;
-  scrollbar-color: oklch(0.26 0.008 60) transparent;
+  scrollbar-color: var(--color-surface-active) transparent;
+}
+
+/* ==========================================================================
+   TEMA PALETLERİ (Tokens & Themes)
+   ========================================================================== */
+
+/* 1. Kura Kehribar (Varsayılan) */
+html[data-theme="kura"],
+html:not([data-theme]) {
+  --color-background: oklch(0.16 0.008 60);
+  --color-surface: oklch(0.20 0.008 60);
+  --color-surface-hover: oklch(0.24 0.008 60);
+  --color-surface-active: oklch(0.28 0.008 60);
+  --color-border: oklch(1 0 0 / 0.07);
+  --color-border-subtle: oklch(1 0 0 / 0.04);
+  --color-border-hover: oklch(1 0 0 / 0.14);
+  --color-primary: oklch(0.95 0.005 80);
+  --color-secondary: oklch(0.72 0.01 80);
+  --color-tertiary: oklch(0.58 0.01 80);
+  --color-accent: oklch(0.78 0.12 75);
+  --color-accent-hover: oklch(0.83 0.11 75);
+  --color-status-online: oklch(0.75 0.12 150);
+  --color-status-offline: oklch(0.65 0.18 25);
+}
+
+/* 2. Ayu Dark */
+html[data-theme="ayu"] {
+  --color-background: #0b0e14;
+  --color-surface: #131721;
+  --color-surface-hover: #1c2230;
+  --color-surface-active: #252d40;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-subtle: rgba(255, 255, 255, 0.04);
+  --color-border-hover: rgba(255, 255, 255, 0.16);
+  --color-primary: #cbccc6;
+  --color-secondary: #9099a2;
+  --color-tertiary: #5c6773;
+  --color-accent: #ffb454;
+  --color-accent-hover: #ffc47a;
+  --color-status-online: #7fd962;
+  --color-status-offline: #f26d78;
+}
+
+/* 3. Nord */
+html[data-theme="nord"] {
+  --color-background: #242933;
+  --color-surface: #2e3440;
+  --color-surface-hover: #3b4252;
+  --color-surface-active: #434c5e;
+  --color-border: rgba(216, 222, 233, 0.09);
+  --color-border-subtle: rgba(216, 222, 233, 0.05);
+  --color-border-hover: rgba(216, 222, 233, 0.18);
+  --color-primary: #eceff4;
+  --color-secondary: #d8dee9;
+  --color-tertiary: #8892b0;
+  --color-accent: #88c0d0;
+  --color-accent-hover: #81a1c1;
+  --color-status-online: #a3be8c;
+  --color-status-offline: #bf616a;
+}
+
+/* 4. Dracula */
+html[data-theme="dracula"] {
+  --color-background: #1e1f29;
+  --color-surface: #282a36;
+  --color-surface-hover: #343746;
+  --color-surface-active: #44475a;
+  --color-border: rgba(248, 248, 242, 0.09);
+  --color-border-subtle: rgba(248, 248, 242, 0.05);
+  --color-border-hover: rgba(248, 248, 242, 0.18);
+  --color-primary: #f8f8f2;
+  --color-secondary: #c5c8d4;
+  --color-tertiary: #6272a4;
+  --color-accent: #bd93f9;
+  --color-accent-hover: #caa7fa;
+  --color-status-online: #50fa7b;
+  --color-status-offline: #ff5555;
+}
+
+/* 5. Catppuccin Mocha */
+html[data-theme="catppuccin"] {
+  --color-background: #181825;
+  --color-surface: #1e1e2e;
+  --color-surface-hover: #313244;
+  --color-surface-active: #45475a;
+  --color-border: rgba(205, 214, 244, 0.09);
+  --color-border-subtle: rgba(205, 214, 244, 0.05);
+  --color-border-hover: rgba(205, 214, 244, 0.18);
+  --color-primary: #cdd6f4;
+  --color-secondary: #bac2de;
+  --color-tertiary: #a6adc8;
+  --color-accent: #cba6f7;
+  --color-accent-hover: #d7bcf9;
+  --color-status-online: #a6e3a1;
+  --color-status-offline: #f38ba8;
+}
+
+/* 6. Tokyo Night */
+html[data-theme="tokyo-night"] {
+  --color-background: #16161e;
+  --color-surface: #1a1b26;
+  --color-surface-hover: #24283b;
+  --color-surface-active: #2f3549;
+  --color-border: rgba(192, 202, 245, 0.09);
+  --color-border-subtle: rgba(192, 202, 245, 0.05);
+  --color-border-hover: rgba(192, 202, 245, 0.18);
+  --color-primary: #c0caf5;
+  --color-secondary: #9aa5ce;
+  --color-tertiary: #565f89;
+  --color-accent: #7aa2f7;
+  --color-accent-hover: #8fb1f9;
+  --color-status-online: #9ece6a;
+  --color-status-offline: #f7768e;
+}
+
+/* 7. Gruvbox Dark */
+html[data-theme="gruvbox"] {
+  --color-background: #1d2021;
+  --color-surface: #282828;
+  --color-surface-hover: #3c3836;
+  --color-surface-active: #504945;
+  --color-border: rgba(235, 219, 178, 0.09);
+  --color-border-subtle: rgba(235, 219, 178, 0.05);
+  --color-border-hover: rgba(235, 219, 178, 0.18);
+  --color-primary: #ebdbb2;
+  --color-secondary: #d5c4a1;
+  --color-tertiary: #928374;
+  --color-accent: #fe8019;
+  --color-accent-hover: #ffa04d;
+  --color-status-online: #b8bb26;
+  --color-status-offline: #fb4934;
+}
+
+/* 8. OLED Black */
+html[data-theme="oled"] {
+  --color-background: #000000;
+  --color-surface: #0e0e0e;
+  --color-surface-hover: #1a1a1a;
+  --color-surface-active: #282828;
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-border-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-hover: rgba(255, 255, 255, 0.22);
+  --color-primary: #ffffff;
+  --color-secondary: #a3a3a3;
+  --color-tertiary: #737373;
+  --color-accent: #f59e0b;
+  --color-accent-hover: #fbbf24;
+  --color-status-online: #22c55e;
+  --color-status-offline: #ef4444;
 }
 
 /* Focus halkası */
@@ -72,3 +221,33 @@ body {
     height: 12px;
   }
 }
+
+/* Tıklanabilir ve etkileşimli öğeler için pointer imleci */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]):not(:disabled),
+  select:not(:disabled),
+  summary,
+  input[type="button"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="reset"]:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="range"]:not(:disabled),
+  input[type="file"]:not(:disabled)::file-selector-button,
+  a[href],
+  label[for],
+  label:has(input:not(:disabled)) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"],
+  [role="button"]:disabled,
+  input:disabled,
+  select:disabled,
+  label:has(input:disabled) {
+    cursor: not-allowed;
+  }
+}
+

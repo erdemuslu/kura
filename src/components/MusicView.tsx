@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  Disc,
   Edit2,
   Heart,
   ListMusic,
@@ -13,8 +14,6 @@ import {
   coverUrl,
   getAlbumTracks,
   getArtistTracks,
-  launchPlayer,
-  launchPlayerBatch,
   type AlbumSummary,
   type ArtistSummary,
   type MediaItem,
@@ -37,7 +36,6 @@ type Level =
   | { kind: 'playlist'; playlistId: string };
 
 interface MusicViewProps {
-  player: string;
   query: string;
   playingPath: string | null;
   onPlayed: (path: string | null) => void;
@@ -49,7 +47,6 @@ interface MusicViewProps {
 }
 
 export default function MusicView({
-  player,
   query,
   playingPath,
   onPlayed,
@@ -72,8 +69,70 @@ export default function MusicView({
   const [isRenamingPlaylist, setIsRenamingPlaylist] = useState(false);
   const [renameValue, setRenameValue] = useState('');
 
-  const { currentTrack, isPlaying, playTrack, playQueue } = useAudioPlayer();
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    album: AlbumSummary;
+  } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+  };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = (e: MouseEvent | TouchEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    const handleScroll = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+
+    window.addEventListener('mousedown', handleClose);
+    window.addEventListener('touchstart', handleClose);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('mousedown', handleClose);
+      window.removeEventListener('touchstart', handleClose);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [contextMenu]);
+
+  const { currentTrack, isPlaying, playTrack, playQueue, addToQueue } = useAudioPlayer();
   const favoriteSongs = favorites.filter((f) => f.mediaType === 'song');
+
+  const handleAlbumContextMenu = (e: React.MouseEvent, a: AlbumSummary) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menuWidth = 200;
+    const menuHeight = 180;
+    const x = Math.min(e.clientX, window.innerWidth - menuWidth - 16);
+    const y = Math.min(e.clientY, window.innerHeight - menuHeight - 16);
+    setContextMenu({ x, y, album: a });
+  };
+
+  const handleAddToQueue = async (album: AlbumSummary) => {
+    setContextMenu(null);
+    try {
+      const list = await getAlbumTracks(album.album, album.artist);
+      if (list.length === 0) return;
+      addToQueue(list);
+      showToast(t('music.addedToQueue', { n: list.length }));
+    } catch (e) {
+      console.error('Failed to add album to queue:', e);
+    }
+  };
 
   // Görünüm veya seviye değişiminde (albüm -> sanatçı -> albüm detayı) sayfayı tepeye kaydır
   useEffect(() => {
@@ -114,14 +173,10 @@ export default function MusicView({
 
   const playSingle = async (item: MediaItem) => {
     onPlayed(item.file_path);
-    if (player === 'in_app') {
-      // Video teardown'unun (pause/src clear) bir frame tamamlanmasına izin ver
-      requestAnimationFrame(() => {
-        playTrack(item, tracks.data ?? [item]);
-      });
-      return;
-    }
-    setFeedback(await launchPlayer({ filePath: item.file_path, targetApp: player }));
+    // Video teardown'unun (pause/src clear) bir frame tamamlanmasına izin ver
+    requestAnimationFrame(() => {
+      playTrack(item, tracks.data ?? [item]);
+    });
   };
 
   const playAll = async (label: string, fetchTracks: () => Promise<MediaItem[]>) => {
@@ -133,20 +188,10 @@ export default function MusicView({
         setFeedback({ success: false, message: t('music.noTracks', { label }) });
         return;
       }
-      if (player === 'in_app') {
-        onPlayed(list[0]?.file_path ?? null);
-        requestAnimationFrame(() => {
-          playQueue(list, 0);
-        });
-        return;
-      }
-      const result = await launchPlayerBatch(
-        list.map((track) => track.file_path),
-        player,
-        label,
-      );
-      setFeedback(result);
-      onPlayed(null);
+      onPlayed(list[0]?.file_path ?? null);
+      requestAnimationFrame(() => {
+        playQueue(list, 0);
+      });
     } catch (e) {
       setFeedback({ success: false, message: String(e) });
     } finally {
@@ -353,7 +398,6 @@ export default function MusicView({
             {displayedAlbums.map((a: AlbumSummary) => {
               const label = `${a.artist} — ${a.album}`;
               const isCurrentAlbum =
-                player === 'in_app' &&
                 currentTrack?.album === a.album &&
                 currentTrack?.artist === a.artist;
 
@@ -379,6 +423,7 @@ export default function MusicView({
                     })
                   }
                   onClick={() => setLevel({ kind: 'album', album: a.album, artist: a.artist })}
+                  onContextMenu={(e) => handleAlbumContextMenu(e, a)}
                   onPlayHover={() =>
                     playAll(label, () => getAlbumTracks(a.album, a.artist))
                   }
@@ -436,7 +481,7 @@ export default function MusicView({
                     created_at: null,
                     updated_at: null,
                   }));
-                  if (player === 'in_app' && mediaItems.length > 0) {
+                  if (mediaItems.length > 0) {
                     playQueue(mediaItems, 0);
                   }
                 }}
@@ -447,8 +492,7 @@ export default function MusicView({
             </header>
             <div className="divide-y divide-border/40">
               {favoriteSongs.map((fav, i) => {
-                const isCurrentInApp =
-                  player === 'in_app' && currentTrack?.file_path === fav.id;
+                const isCurrentInApp = currentTrack?.file_path === fav.id;
                 const isPlayingRow = isCurrentInApp || playingPath === fav.id;
 
                 const item: MediaItem = {
@@ -677,9 +721,7 @@ export default function MusicView({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (player === 'in_app') {
-                              playQueue(plMediaItems, 0);
-                            }
+                            playQueue(plMediaItems, 0);
                           }}
                           title={t('playlists.playAll')}
                           className="absolute bottom-2.5 right-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-background shadow-lg opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 hover:scale-105"
@@ -737,7 +779,6 @@ export default function MusicView({
             {displayedAlbums.map((a: AlbumSummary) => {
               const label = `${a.artist} — ${a.album}`;
               const isCurrentAlbum =
-                player === 'in_app' &&
                 currentTrack?.album === a.album &&
                 currentTrack?.artist === a.artist;
 
@@ -753,6 +794,7 @@ export default function MusicView({
                   aspect="1:1"
                   isPlaying={isCurrentAlbum}
                   onClick={() => setLevel({ kind: 'album', album: a.album, artist: a.artist })}
+                  onContextMenu={(e) => handleAlbumContextMenu(e, a)}
                   onPlayHover={() =>
                     playAll(label, () => getAlbumTracks(a.album, a.artist))
                   }
@@ -883,8 +925,7 @@ export default function MusicView({
             ) : (
               <div className="divide-y divide-border/40">
                 {tracks.data?.map((track, i) => {
-                  const isCurrentInApp =
-                    player === 'in_app' && currentTrack?.file_path === track.file_path;
+                  const isCurrentInApp = currentTrack?.file_path === track.file_path;
                   const isPlayingRow = isCurrentInApp || playingPath === track.file_path;
                   const q = formatQuality(track);
 
@@ -932,6 +973,7 @@ export default function MusicView({
                         </span>
                       )}
                       <span
+                        role="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleFavorite({
@@ -948,7 +990,7 @@ export default function MusicView({
                             ? t('common.removeFromFavorites')
                             : t('common.addToFavorites')
                         }
-                        className="p-1 text-tertiary hover:text-accent transition shrink-0"
+                        className="p-1 text-tertiary hover:text-accent transition shrink-0 cursor-pointer"
                       >
                         <Heart
                           className={`h-3.5 w-3.5 ${
@@ -959,12 +1001,13 @@ export default function MusicView({
                         />
                       </span>
                       <span
+                        role="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setTrackForPlaylist(track);
                         }}
                         title={t('playlists.addToPlaylist')}
-                        className="p-1 text-tertiary hover:text-accent transition shrink-0 opacity-30 hover:opacity-100"
+                        className="p-1 text-tertiary hover:text-accent transition shrink-0 opacity-30 hover:opacity-100 cursor-pointer"
                       >
                         <ListPlus className="h-3.5 w-3.5" />
                       </span>
@@ -1113,7 +1156,7 @@ export default function MusicView({
                     type="button"
                     disabled={plMediaItems.length === 0}
                     onClick={() => {
-                      if (player === 'in_app' && plMediaItems.length > 0) {
+                      if (plMediaItems.length > 0) {
                         playQueue(plMediaItems, 0);
                       }
                     }}
@@ -1150,8 +1193,7 @@ export default function MusicView({
               ) : (
                 <div className="divide-y divide-border/40">
                   {plMediaItems.map((trk, i) => {
-                    const isCurrentInApp =
-                      player === 'in_app' && currentTrack?.file_path === trk.file_path;
+                    const isCurrentInApp = currentTrack?.file_path === trk.file_path;
                     const isPlayingRow = isCurrentInApp || playingPath === trk.file_path;
 
                     return (
@@ -1187,6 +1229,7 @@ export default function MusicView({
                           </span>
                         )}
                         <span
+                          role="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleFavorite({
@@ -1203,7 +1246,7 @@ export default function MusicView({
                               ? t('common.removeFromFavorites')
                               : t('common.addToFavorites')
                           }
-                          className="p-1 text-tertiary hover:text-accent transition shrink-0"
+                          className="p-1 text-tertiary hover:text-accent transition shrink-0 cursor-pointer"
                         >
                           <Heart
                             className={`h-3.5 w-3.5 ${
@@ -1214,12 +1257,13 @@ export default function MusicView({
                           />
                         </span>
                         <span
+                          role="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             removeTrackFromPlaylist(pl.id, trk.file_path);
                           }}
                           title={t('playlists.removeFromPlaylist')}
-                          className="p-1 text-tertiary hover:text-status-offline transition shrink-0 opacity-40 hover:opacity-100"
+                          className="p-1 text-tertiary hover:text-status-offline transition shrink-0 opacity-40 hover:opacity-100 cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </span>
@@ -1241,6 +1285,101 @@ export default function MusicView({
         track={trackForPlaylist}
         onClose={() => setTrackForPlaylist(null)}
       />
+
+      {/* Context Menu for Albums */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+          className="fixed z-50 min-w-[200px] rounded-xl bg-surface/95 backdrop-blur-xl p-1.5 shadow-2xl ring-1 ring-border text-xs text-primary animate-in fade-in zoom-in-95 duration-100 select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-2.5 py-1.5 border-b border-border/40 mb-1">
+            <p className="font-semibold text-primary truncate max-w-[180px]">
+              {contextMenu.album.album || t('common.unknownAlbum')}
+            </p>
+            <p className="text-[11px] text-tertiary truncate max-w-[180px]">
+              {contextMenu.album.artist || t('common.unknownArtist')}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              const a = contextMenu.album;
+              const label = `${a.artist} — ${a.album}`;
+              setContextMenu(null);
+              playAll(label, () => getAlbumTracks(a.album, a.artist));
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-surface-hover hover:text-accent transition font-medium text-primary"
+          >
+            <Play className="h-4 w-4 text-accent fill-current" />
+            <span>{t('music.playNow')}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleAddToQueue(contextMenu.album)}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-surface-hover hover:text-accent transition font-medium text-primary"
+          >
+            <ListPlus className="h-4 w-4 text-secondary" />
+            <span>{t('music.addToQueue')}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const a = contextMenu.album;
+              setContextMenu(null);
+              setLevel({ kind: 'album', album: a.album, artist: a.artist });
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-surface-hover hover:text-accent transition font-medium text-primary"
+          >
+            <Disc className="h-4 w-4 text-secondary" />
+            <span>{t('music.goToAlbum')}</span>
+          </button>
+
+          <div className="my-1 border-t border-border/40" />
+
+          <button
+            type="button"
+            onClick={() => {
+              const a = contextMenu.album;
+              const favId = a.folder_path || `album:${a.album}:${a.artist}`;
+              toggleFavorite({
+                id: favId,
+                mediaType: 'song',
+                title: a.album,
+                subtitle: a.artist,
+                posterUrl: coverUrl(a.album, a.artist),
+              });
+              setContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-surface-hover hover:text-accent transition font-medium text-primary"
+          >
+            <Heart
+              className={`h-4 w-4 ${
+                isFavorite(contextMenu.album.folder_path || `album:${contextMenu.album.album}:${contextMenu.album.artist}`)
+                  ? 'fill-current text-accent'
+                  : 'text-secondary'
+              }`}
+            />
+            <span>
+              {isFavorite(contextMenu.album.folder_path || `album:${contextMenu.album.album}:${contextMenu.album.artist}`)
+                ? t('common.removeFromFavorites')
+                : t('common.addToFavorites')}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Toast Bildirimi */}
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-surface/90 px-4 py-2 text-xs font-medium text-primary shadow-2xl backdrop-blur-md ring-1 ring-border animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <ListPlus className="h-3.5 w-3.5 text-accent" />
+          <span>{toast}</span>
+        </div>
+      )}
     </div>
   );
 }
