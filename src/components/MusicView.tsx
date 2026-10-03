@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, SlidersHorizontal } from 'lucide-react';
+import { Heart, Plus, SlidersHorizontal } from 'lucide-react';
 import {
   coverUrl,
   getAlbumTracks,
@@ -12,6 +12,7 @@ import {
 } from '../api/client';
 import { useAudioPlayer } from '../context/AudioPlayerContext';
 import { useLocale } from '../context/LocaleContext';
+import { useFavorites } from '../context/FavoritesContext';
 import { useAlbums, useAlbumTracks, useArtists } from '../hooks/useMedia';
 import { formatDuration, formatQuality } from '../lib/format';
 import { matchesCategoryPath } from '../lib/path';
@@ -19,7 +20,7 @@ import { resetScrollTop } from '../lib/scroll';
 import MediaCard from './MediaCard';
 
 type Level =
-  | { kind: 'top'; view: 'albums' | 'artists' }
+  | { kind: 'top'; view: 'albums' | 'artists' | 'favorites' }
   | { kind: 'artist'; artist: string }
   | { kind: 'album'; album: string; artist: string };
 
@@ -47,11 +48,13 @@ export default function MusicView({
   categoryPaths,
 }: MusicViewProps) {
   const { t } = useLocale();
+  const { favorites, isFavorite, toggleFavorite } = useFavorites();
   const [level, setLevel] = useState<Level>({ kind: 'top', view: 'albums' });
   const [batchLabel, setBatchLabel] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
   const { currentTrack, isPlaying, playTrack, playQueue } = useAudioPlayer();
+  const favoriteSongs = favorites.filter((f) => f.mediaType === 'song');
 
   // Görünüm veya seviye değişiminde (albüm -> sanatçı -> albüm detayı) sayfayı tepeye kaydır
   useEffect(() => {
@@ -193,18 +196,22 @@ export default function MusicView({
         <div className="flex items-center gap-3 h-8">
           {level.kind === 'top' && (
             <div className="flex rounded-lg bg-surface p-1 ring-1 ring-border">
-              {(['albums', 'artists'] as const).map((v) => (
+              {(['albums', 'artists', 'favorites'] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
                   onClick={() => setLevel({ kind: 'top', view: v })}
                   className={`rounded-md px-3 py-1 text-xs font-medium transition ${
                     level.view === v
-                      ? 'bg-surface-hover text-primary shadow-sm'
+                      ? 'bg-surface-hover text-primary shadow-sm font-semibold'
                       : 'text-tertiary hover:text-secondary'
                   }`}
                 >
-                  {v === 'albums' ? t('music.albums') : t('music.artists')}
+                  {v === 'albums'
+                    ? t('music.albums')
+                    : v === 'artists'
+                    ? t('music.artists')
+                    : t('common.favorites')}
                 </button>
               ))}
             </div>
@@ -324,6 +331,16 @@ export default function MusicView({
                   coverUrl={coverUrl(a.album, a.artist)}
                   aspect="1:1"
                   isPlaying={isCurrentAlbum}
+                  isFavorite={isFavorite(a.folder_path || `album:${a.album}:${a.artist}`)}
+                  onToggleFavorite={() =>
+                    toggleFavorite({
+                      id: a.folder_path || `album:${a.album}:${a.artist}`,
+                      mediaType: 'song',
+                      title: a.album,
+                      subtitle: a.artist,
+                      posterUrl: coverUrl(a.album, a.artist),
+                    })
+                  }
                   onClick={() => setLevel({ kind: 'album', album: a.album, artist: a.artist })}
                   onPlayHover={() =>
                     playAll(label, () => getAlbumTracks(a.album, a.artist))
@@ -334,6 +351,153 @@ export default function MusicView({
             })}
           </div>
         ))}
+
+      {/* Favoriler Sekmesi (Müzik Ana Sayfası) */}
+      {level.kind === 'top' && level.view === 'favorites' && (
+        favoriteSongs.length === 0 ? (
+          <div className="py-24 text-center space-y-3">
+            <Heart className="h-10 w-10 text-tertiary mx-auto opacity-40 stroke-[1.2]" />
+            <p className="font-serif text-2xl text-secondary font-normal">{t('common.noFavorites')}</p>
+            <p className="text-xs text-tertiary max-w-sm mx-auto">
+              {t('common.tip')} {t('common.addToFavorites')}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl bg-surface ring-1 ring-border">
+            <header className="flex items-center justify-between border-b border-border px-4 py-3">
+              <span className="text-xs font-semibold uppercase tracking-wider text-tertiary">
+                {t('common.favorites')} ({favoriteSongs.length})
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const mediaItems: MediaItem[] = favoriteSongs.map((f, i) => ({
+                    id: `fav_${i}_${f.id}`,
+                    title: f.title,
+                    artist: f.subtitle || null,
+                    album: f.meta || null,
+                    file_path: f.id,
+                    media_type: 'music',
+                    file_size: 0,
+                    disk_label: '',
+                    format: 'mp3',
+                    duration: null,
+                    track_number: null,
+                    disc_number: null,
+                    year: null,
+                    show_title: null,
+                    season: null,
+                    episode: null,
+                    folder_path: null,
+                    subtitle_count: 0,
+                    subtitle_path: null,
+                    genre: null,
+                    sample_rate: null,
+                    bit_depth: null,
+                    channels: null,
+                    cover_image_path: f.posterUrl || null,
+                    created_at: null,
+                    updated_at: null,
+                  }));
+                  if (player === 'in_app' && mediaItems.length > 0) {
+                    playQueue(mediaItems, 0);
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-background hover:bg-accent-hover transition"
+              >
+                <span>{t('music.playAll')}</span>
+              </button>
+            </header>
+            <div className="divide-y divide-border/40">
+              {favoriteSongs.map((fav, i) => {
+                const isCurrentInApp =
+                  player === 'in_app' && currentTrack?.file_path === fav.id;
+                const isPlayingRow = isCurrentInApp || playingPath === fav.id;
+
+                const item: MediaItem = {
+                  id: `fav_${i}_${fav.id}`,
+                  title: fav.title,
+                  artist: fav.subtitle || null,
+                  album: fav.meta || null,
+                  file_path: fav.id,
+                  media_type: 'music',
+                  file_size: 0,
+                  disk_label: '',
+                  format: 'mp3',
+                  duration: null,
+                  track_number: null,
+                  disc_number: null,
+                  year: null,
+                  show_title: null,
+                  season: null,
+                  episode: null,
+                  folder_path: null,
+                  subtitle_count: 0,
+                  subtitle_path: null,
+                  genre: null,
+                  sample_rate: null,
+                  bit_depth: null,
+                  channels: null,
+                  cover_image_path: fav.posterUrl || null,
+                  created_at: null,
+                  updated_at: null,
+                };
+
+                return (
+                  <div
+                    key={fav.id}
+                    onClick={() => playSingle(item)}
+                    className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-xs transition hover:bg-surface-hover cursor-pointer ${
+                      isPlayingRow ? 'bg-accent/10 text-accent font-medium' : 'text-primary'
+                    }`}
+                  >
+                    <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded bg-surface-hover ring-1 ring-border">
+                      {fav.posterUrl ? (
+                        <img
+                          src={fav.posterUrl}
+                          alt={fav.title}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-tertiary">
+                          ♪
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1 flex flex-col justify-center">
+                      <span className={`truncate ${isPlayingRow ? 'font-semibold text-accent' : 'text-primary'}`}>
+                        {fav.title}
+                      </span>
+                      {fav.subtitle && (
+                        <span className="truncate text-[11px] text-secondary">
+                          {fav.subtitle} {fav.meta ? `— ${fav.meta}` : ''}
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite({
+                          id: fav.id,
+                          mediaType: 'song',
+                          title: fav.title,
+                        });
+                      }}
+                      title={t('common.removeFromFavorites')}
+                      className="p-1.5 text-accent hover:opacity-75 transition shrink-0"
+                    >
+                      <Heart className="h-4 w-4 fill-current" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )
+      )}
 
       {/* Sanatçıya Ait Albümler Izgarası (Sanatçı Tıklandığında) */}
       {level.kind === 'artist' &&
@@ -443,18 +607,49 @@ export default function MusicView({
                   </h1>
                   <p className="text-base text-secondary mt-0.5">{level.artist}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    playAll(`${level.artist} — ${level.album}`, () =>
-                      Promise.resolve(tracks.data ?? []),
-                    )
-                  }
-                  disabled={batchLabel !== null || !tracks.data || tracks.data.length === 0}
-                  className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-background transition hover:bg-accent-hover disabled:opacity-50"
-                >
-                  {batchLabel ? t('music.adding') : t('music.playAll')}
-                </button>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      playAll(`${level.artist} — ${level.album}`, () =>
+                        Promise.resolve(tracks.data ?? []),
+                      )
+                    }
+                    disabled={batchLabel !== null || !tracks.data || tracks.data.length === 0}
+                    className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-background transition hover:bg-accent-hover disabled:opacity-50"
+                  >
+                    {batchLabel ? t('music.adding') : t('music.playAll')}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toggleFavorite({
+                        id: `album:${level.album}:${level.artist}`,
+                        mediaType: 'song',
+                        title: level.album,
+                        subtitle: level.artist,
+                        posterUrl: coverUrl(level.album, level.artist),
+                      })
+                    }
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium transition ring-1 ${
+                      isFavorite(`album:${level.album}:${level.artist}`)
+                        ? 'bg-accent/15 text-accent ring-accent/40 font-semibold'
+                        : 'bg-surface-hover text-secondary hover:text-primary ring-border'
+                    }`}
+                  >
+                    <Heart
+                      className={`h-4 w-4 ${
+                        isFavorite(`album:${level.album}:${level.artist}`) ? 'fill-current' : ''
+                      }`}
+                    />
+                    <span>
+                      {isFavorite(`album:${level.album}:${level.artist}`)
+                        ? t('common.removeFromFavorites')
+                        : t('common.addToFavorites')}
+                    </span>
+                  </button>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2 text-xs text-tertiary pt-1">
@@ -531,6 +726,33 @@ export default function MusicView({
                           {track.year}
                         </span>
                       )}
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite({
+                            id: track.file_path,
+                            mediaType: 'song',
+                            title: track.title,
+                            subtitle: track.artist || level.artist,
+                            meta: level.album,
+                            posterUrl: coverUrl(level.album, track.artist || level.artist),
+                          });
+                        }}
+                        title={
+                          isFavorite(track.file_path)
+                            ? t('common.removeFromFavorites')
+                            : t('common.addToFavorites')
+                        }
+                        className="p-1 text-tertiary hover:text-accent transition shrink-0"
+                      >
+                        <Heart
+                          className={`h-3.5 w-3.5 ${
+                            isFavorite(track.file_path)
+                              ? 'fill-current text-accent'
+                              : 'opacity-30 hover:opacity-100'
+                          }`}
+                        />
+                      </span>
                       <span className="w-12 shrink-0 text-right font-mono text-[11px] text-tertiary">
                         {formatDuration(track.duration)}
                       </span>

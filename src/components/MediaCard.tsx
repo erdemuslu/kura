@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocale } from '../context/LocaleContext';
-import { Loader2, Play } from 'lucide-react';
+import { Heart, Loader2, Play } from 'lucide-react';
 
 export type CardAspect = '1:1' | '2:3';
 
@@ -12,6 +12,8 @@ export interface MediaCardProps {
   aspect?: CardAspect;
   badges?: string[];
   isPlaying?: boolean;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
   onClick: () => void;
   onPlayHover?: () => void;
   playHoverLoading?: boolean;
@@ -37,6 +39,8 @@ export default function MediaCard({
   aspect = '2:3',
   badges = [],
   isPlaying = false,
+  isFavorite = false,
+  onToggleFavorite,
   onClick,
   onPlayHover,
   playHoverLoading = false,
@@ -128,6 +132,27 @@ export default function MediaCard({
               </div>
             )}
           </div>
+        )}
+
+        {/* Sağ Üst Favori Butonu */}
+        {onToggleFavorite && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite();
+            }}
+            title={isFavorite ? t('common.removeFromFavorites') : t('common.addToFavorites')}
+            className={`absolute z-20 flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-md transition-all active:scale-90 ${
+              menuActions && menuActions.length > 0 ? 'right-10 top-2' : 'right-2 top-2'
+            } ${
+              isFavorite
+                ? 'bg-accent/90 text-background shadow-md opacity-100 hover:scale-105'
+                : 'bg-black/60 text-white/70 hover:text-white hover:bg-black/80 opacity-0 group-hover/card:opacity-100'
+            }`}
+          >
+            <Heart className={`h-3.5 w-3.5 ${isFavorite ? 'fill-current' : ''}`} />
+          </button>
         )}
 
         {/* Sağ Üst Taşma Menüsü (opsiyonel) */}

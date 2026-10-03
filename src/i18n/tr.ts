@@ -38,7 +38,13 @@ export const tr: TranslationDict = {
     unknownArtist: "Bilinmeyen Sanatçı",
     unknownAlbum: "Bilinmeyen Albüm",
     retry: "Yeniden Dene",
-    reload: "Yeniden Yükle"
+    reload: "Yeniden Yükle",
+    favorites: "Favoriler",
+    favoritesOnly: "Yalnızca Favoriler",
+    all: "Tümü",
+    addToFavorites: "Favorilere Ekle",
+    removeFromFavorites: "Favorilerden Çıkar",
+    noFavorites: "Henüz favori eklenmedi"
   },
   nav: {
     newMenu: "Yeni Menü",

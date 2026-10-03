@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, SlidersHorizontal } from 'lucide-react';
+import { Heart, Plus, SlidersHorizontal } from 'lucide-react';
 import {
   launchPlayer,
   posterUrlSeries,
@@ -11,6 +11,7 @@ import { formatDuration, formatSize } from '../lib/format';
 import { matchesCategoryPath } from '../lib/path';
 import { resetScrollTop } from '../lib/scroll';
 import { useLocale } from '../context/LocaleContext';
+import { useFavorites } from '../context/FavoritesContext';
 import MediaCard from './MediaCard';
 import type { VideoPlayerItem } from './VideoPlayerModal';
 
@@ -47,6 +48,8 @@ export default function SeriesView({
   const { t } = useLocale();
   const [level, setLevel] = useState<Level>({ kind: 'shows' });
   const [feedback, setFeedback] = useState<LaunchResult | null>(null);
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   // Dizi, sezon veya bölüm seviyesi geçişlerinde scroll'u sıfırla
   useEffect(() => {
@@ -55,9 +58,9 @@ export default function SeriesView({
 
   const shows = useShows(query);
   const rawShows = shows.data ?? [];
-  const displayedShows = rawShows.filter((s) =>
-    matchesCategoryPath(s.folder_path, categoryPaths),
-  );
+  const displayedShows = rawShows
+    .filter((s) => matchesCategoryPath(s.folder_path, categoryPaths))
+    .filter((s) => !favoritesOnly || isFavorite(s.folder_path || s.show_title));
   const seasons = useSeasons(level.kind === 'shows' ? null : level.show);
   const atEpisodes = level.kind === 'episodes';
   const episodes = useEpisodes(
@@ -126,7 +129,23 @@ export default function SeriesView({
           </nav>
         )}
 
-        <div className="flex items-center gap-3 h-8">
+        <div className="flex items-center gap-2.5 h-8">
+          {level.kind === 'shows' && (
+            <button
+              type="button"
+              onClick={() => setFavoritesOnly(!favoritesOnly)}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ring-1 ${
+                favoritesOnly
+                  ? 'bg-accent text-background ring-accent font-semibold shadow-sm'
+                  : 'bg-surface-hover/70 text-secondary hover:text-primary ring-border hover:bg-surface-hover'
+              }`}
+              title={t('common.favoritesOnly')}
+            >
+              <Heart className={`h-3.5 w-3.5 ${favoritesOnly ? 'fill-current' : ''}`} />
+              <span>{t('common.favorites')}</span>
+            </button>
+          )}
+
           {level.kind === 'shows' &&
             (hasSources ? (
               <button
@@ -205,6 +224,19 @@ export default function SeriesView({
                 coverUrl={posterUrlSeries(s.show_title)}
                 aspect="2:3"
                 badges={[t('series.seasonBadge', { n: s.season_count })]}
+                isFavorite={isFavorite(s.folder_path || s.show_title)}
+                onToggleFavorite={() =>
+                  toggleFavorite({
+                    id: s.folder_path || s.show_title,
+                    mediaType: 'series',
+                    title: s.show_title,
+                    subtitle: t('series.seasonsEpisodes', {
+                      s: s.season_count,
+                      e: s.episode_count,
+                    }),
+                    posterUrl: posterUrlSeries(s.show_title),
+                  })
+                }
                 onClick={() => setLevel({ kind: 'seasons', show: s.show_title })}
               />
             ))}
@@ -233,6 +265,31 @@ export default function SeriesView({
               <h1 className="font-serif text-3xl font-normal text-primary tracking-tight">
                 {level.show}
               </h1>
+              <button
+                type="button"
+                onClick={() =>
+                  toggleFavorite({
+                    id: level.show,
+                    mediaType: 'series',
+                    title: level.show,
+                    posterUrl: posterUrlSeries(level.show),
+                  })
+                }
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition ring-1 ${
+                  isFavorite(level.show)
+                    ? 'bg-accent/15 text-accent ring-accent/40 font-semibold'
+                    : 'bg-surface-hover text-secondary hover:text-primary ring-border'
+                }`}
+              >
+                <Heart
+                  className={`h-3.5 w-3.5 ${isFavorite(level.show) ? 'fill-current' : ''}`}
+                />
+                <span>
+                  {isFavorite(level.show)
+                    ? t('common.removeFromFavorites')
+                    : t('common.addToFavorites')}
+                </span>
+              </button>
             </div>
 
             {(() => {

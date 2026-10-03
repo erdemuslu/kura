@@ -3,6 +3,7 @@ import {
   ChevronDown,
   Copy,
   FolderOpen,
+  Heart,
   Maximize2,
   Minimize2,
   Pause,
@@ -25,6 +26,7 @@ import {
   type MediaItem,
 } from '../api/client';
 import { useLocale } from '../context/LocaleContext';
+import { useFavorites } from '../context/FavoritesContext';
 import { formatDuration, formatSize, getAudioQualityInfo } from '../lib/format';
 
 interface NowPlayingModalProps {
@@ -196,6 +198,7 @@ export default function NowPlayingModal({
   onRemoveFromQueue,
 }: NowPlayingModalProps) {
   const { t } = useLocale();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const [activeTab, setActiveTab] = useState<TabType>('queue');
   const [idleLevel, setIdleLevel] = useState<IdleLevel>('active');
   const [showRemainingTime, setShowRemainingTime] = useState(true);
@@ -694,16 +697,45 @@ export default function NowPlayingModal({
                 </button>
               </div>
 
-              {/* Şarkı Adı (Büyük Serif, max 2 satır, Full Width) */}
-              <h1
-                className={`w-full font-serif text-[clamp(26px,4.5vw,56px)] leading-[1.08] text-white font-normal break-words line-clamp-2 mt-2 transition-all duration-250 ${
-                  isTitleAnimating
-                    ? '-translate-y-2 opacity-0'
-                    : 'translate-y-0 opacity-100'
-                }`}
-              >
-                {track.title}
-              </h1>
+              {/* Şarkı Adı & Favori (Büyük Serif, max 2 satır, Full Width) */}
+              <div className="flex items-start justify-between gap-4 mt-2">
+                <h1
+                  className={`flex-1 font-serif text-[clamp(26px,4.5vw,56px)] leading-[1.08] text-white font-normal break-words line-clamp-2 transition-all duration-250 ${
+                    isTitleAnimating
+                      ? '-translate-y-2 opacity-0'
+                      : 'translate-y-0 opacity-100'
+                  }`}
+                >
+                  {track.title}
+                </h1>
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleFavorite({
+                      id: track.file_path,
+                      mediaType: 'song',
+                      title: track.title,
+                      subtitle: track.artist || undefined,
+                      meta: track.album || undefined,
+                      posterUrl: coverUrl(track.file_path),
+                    });
+                  }}
+                  title={
+                    isFavorite(track.file_path)
+                      ? t('common.removeFromFavorites')
+                      : t('common.addToFavorites')
+                  }
+                  className="p-2 text-white/50 hover:text-white transition shrink-0 mt-1 rounded-full hover:bg-white/10"
+                >
+                  <Heart
+                    className={`h-6 w-6 transition-colors ${
+                      isFavorite(track.file_path)
+                        ? 'fill-[var(--accent-color)] text-[var(--accent-color)]'
+                        : ''
+                    }`}
+                  />
+                </button>
+              </div>
 
               {/* Sanatçı & Ek Bilgi (Full Width) */}
               <div className="w-full flex flex-wrap items-baseline gap-x-2.5 gap-y-1 mt-2.5">

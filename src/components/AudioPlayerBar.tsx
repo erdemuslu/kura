@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Heart,
   ListMusic,
   Pause,
   Play,
@@ -15,6 +16,7 @@ import {
 import { coverUrl } from '../api/client';
 import { useAudioPlayer } from '../context/AudioPlayerContext';
 import { useLocale } from '../context/LocaleContext';
+import { useFavorites } from '../context/FavoritesContext';
 import { formatDuration, formatSize, getAudioQualityInfo } from '../lib/format';
 import NowPlayingModal from './NowPlayingModal';
 
@@ -46,6 +48,7 @@ export default function AudioPlayerBar() {
     removeFromQueue,
     clearQueue,
   } = useAudioPlayer();
+  const { isFavorite, toggleFavorite } = useFavorites();
 
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
   const [hoverSeekTime, setHoverSeekTime] = useState<number | null>(null);
@@ -284,6 +287,32 @@ export default function AudioPlayerBar() {
                 ) : null}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFavorite({
+                  id: currentTrack.file_path,
+                  mediaType: 'song',
+                  title: currentTrack.title,
+                  subtitle: currentTrack.artist || undefined,
+                  meta: currentTrack.album || undefined,
+                  posterUrl: cover,
+                });
+              }}
+              title={
+                isFavorite(currentTrack.file_path)
+                  ? t('common.removeFromFavorites')
+                  : t('common.addToFavorites')
+              }
+              className="p-1.5 text-tertiary hover:text-accent transition ml-1 shrink-0"
+            >
+              <Heart
+                className={`h-4 w-4 ${
+                  isFavorite(currentTrack.file_path) ? 'fill-current text-accent' : ''
+                }`}
+              />
+            </button>
           </div>
 
           {/* 2. Orta Bölge: Masaüstü Oynatıcı Kontrolleri (Mobilde gizlenir) */}

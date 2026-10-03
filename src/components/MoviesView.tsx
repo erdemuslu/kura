@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, SlidersHorizontal } from 'lucide-react';
+import { Heart, Plus, SlidersHorizontal } from 'lucide-react';
 import {
   getMovieFiles,
   launchPlayer,
@@ -14,6 +14,7 @@ import { formatSize } from '../lib/format';
 import { matchesCategoryPath } from '../lib/path';
 import { resetScrollTop } from '../lib/scroll';
 import { useLocale } from '../context/LocaleContext';
+import { useFavorites } from '../context/FavoritesContext';
 import MediaCard from './MediaCard';
 import type { VideoPlayerItem } from './VideoPlayerModal';
 
@@ -48,15 +49,18 @@ export default function MoviesView({
   const [playing, setPlaying] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<LaunchResult | null>(null);
 
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+
   // Film detayına girerken veya çıkarken scroll'u sıfırla
   useEffect(() => {
     resetScrollTop();
   }, [detail]);
 
   const rawMovies = movies.data ?? [];
-  const displayedMovies = rawMovies.filter((m) =>
-    matchesCategoryPath(m.folder_path, categoryPaths),
-  );
+  const displayedMovies = rawMovies
+    .filter((m) => matchesCategoryPath(m.folder_path, categoryPaths))
+    .filter((m) => !favoritesOnly || isFavorite(m.folder_path || m.title));
   const totalSize = displayedMovies.reduce((acc, m) => acc + m.total_size, 0);
 
   const detailFiles = useMovieFiles(detail ? detail.folder_path : null);
@@ -223,7 +227,7 @@ export default function MoviesView({
               </p>
             )}
 
-            <div className="pt-2">
+            <div className="pt-2 flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => playGroup(detail)}
@@ -235,6 +239,35 @@ export default function MoviesView({
                   : detail.file_count > 1
                     ? t('movies.playAll')
                     : t('movies.play')}
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  toggleFavorite({
+                    id: detail.folder_path || detail.title,
+                    mediaType: 'movie',
+                    title: detail.title,
+                    subtitle: formatSize(detail.total_size),
+                    posterUrl: posterUrlMovie(detail.title, detail.folder_path),
+                  })
+                }
+                className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium transition ring-1 ${
+                  isFavorite(detail.folder_path || detail.title)
+                    ? 'bg-accent/15 text-accent ring-accent/40 font-semibold'
+                    : 'bg-surface-hover text-secondary hover:text-primary ring-border'
+                }`}
+              >
+                <Heart
+                  className={`h-4 w-4 ${
+                    isFavorite(detail.folder_path || detail.title) ? 'fill-current' : ''
+                  }`}
+                />
+                <span>
+                  {isFavorite(detail.folder_path || detail.title)
+                    ? t('common.removeFromFavorites')
+                    : t('common.addToFavorites')}
+                </span>
               </button>
             </div>
           </div>
@@ -300,7 +333,21 @@ export default function MoviesView({
           </p>
         </div>
 
-        <div className="flex items-center gap-3 h-8">
+        <div className="flex items-center gap-2.5 h-8">
+          <button
+            type="button"
+            onClick={() => setFavoritesOnly(!favoritesOnly)}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ring-1 ${
+              favoritesOnly
+                ? 'bg-accent text-background ring-accent font-semibold shadow-sm'
+                : 'bg-surface-hover/70 text-secondary hover:text-primary ring-border hover:bg-surface-hover'
+            }`}
+            title={t('common.favoritesOnly')}
+          >
+            <Heart className={`h-3.5 w-3.5 ${favoritesOnly ? 'fill-current' : ''}`} />
+            <span>{t('common.favorites')}</span>
+          </button>
+
           {hasSources ? (
             <button
               type="button"
@@ -377,6 +424,16 @@ export default function MoviesView({
                 aspect="2:3"
                 badges={badges}
                 isPlaying={playingLabel === m.title}
+                isFavorite={isFavorite(m.folder_path || m.title)}
+                onToggleFavorite={() =>
+                  toggleFavorite({
+                    id: m.folder_path || m.title,
+                    mediaType: 'movie',
+                    title: m.title,
+                    subtitle: formatSize(m.total_size),
+                    posterUrl: posterUrlMovie(m.title, m.folder_path),
+                  })
+                }
                 onClick={() => setDetail(m)}
                 onPlayHover={() => playGroup(m)}
                 playHoverLoading={playing === m.title}

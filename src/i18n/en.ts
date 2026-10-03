@@ -36,7 +36,13 @@ export const en = {
     unknownArtist: "Unknown Artist",
     unknownAlbum: "Unknown Album",
     retry: "Try Again",
-    reload: "Reload"
+    reload: "Reload",
+    favorites: "Favorites",
+    favoritesOnly: "Favorites Only",
+    all: "All",
+    addToFavorites: "Add to Favorites",
+    removeFromFavorites: "Remove from Favorites",
+    noFavorites: "No favorites added yet"
   },
   nav: {
     newMenu: "New Menu",
