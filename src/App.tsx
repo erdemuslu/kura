@@ -1,12 +1,15 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import {
+  Film,
   HardDrive,
   Menu,
+  Music,
   Plus,
   Radio,
   Search,
   Settings,
+  Tv,
   X,
 } from 'lucide-react';
 import AudioPlayerBar from './components/AudioPlayerBar';
@@ -37,6 +40,12 @@ import { useDisks, useScan } from './hooks/useMedia';
 
 const DEFAULT_CATEGORIES: CategoryInfo[] = [
   {
+    id: 'music',
+    label: 'Music',
+    mediaType: 'music',
+    paths: ["/Volumes/Erdem'sDisk/Müzik"],
+  },
+  {
     id: 'movie',
     label: 'Movies',
     mediaType: 'movie',
@@ -47,12 +56,6 @@ const DEFAULT_CATEGORIES: CategoryInfo[] = [
     label: 'Series',
     mediaType: 'series',
     paths: ["/Volumes/Erdem'sDisk/Dizi"],
-  },
-  {
-    id: 'music',
-    label: 'Music',
-    mediaType: 'music',
-    paths: ["/Volumes/Erdem'sDisk/Müzik"],
   },
 ];
 
@@ -68,14 +71,25 @@ function MainLayout() {
       const saved = localStorage.getItem('kura-categories');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Müzik bölümünü önceliklendir (Issue #2): ilk sırada değilse en başa taşı
+          const musicIndex = parsed.findIndex(
+            (c: CategoryInfo) => c.mediaType === 'music' || c.id === 'music',
+          );
+          if (musicIndex > 0) {
+            const [musicCat] = parsed.splice(musicIndex, 1);
+            parsed.unshift(musicCat);
+            localStorage.setItem('kura-categories', JSON.stringify(parsed));
+          }
+          return parsed;
+        }
       }
     } catch {}
     return DEFAULT_CATEGORIES;
   });
 
   const [activeCatId, setActiveCatId] = useState<string>(() => {
-    return categories[0]?.id ?? 'movie';
+    return categories[0]?.id ?? 'music';
   });
 
   const activeCategory =
@@ -356,13 +370,22 @@ function MainLayout() {
                     key={c.id}
                     type="button"
                     onClick={() => setActiveCatId(c.id)}
-                    className={`relative flex h-full items-center px-3.5 text-xs font-medium transition-colors ${
+                    className={`relative flex h-full items-center gap-1.5 px-3.5 text-xs font-medium transition-colors ${
                       isActive
-                        ? 'text-primary'
+                        ? 'text-primary font-semibold'
                         : 'text-tertiary hover:text-secondary'
                     }`}
                   >
-                    {categoryDisplayLabel(c, t)}
+                    {c.mediaType === 'music' && (
+                      <Music className={`h-3.5 w-3.5 ${isActive ? 'text-accent' : 'text-tertiary'}`} />
+                    )}
+                    {c.mediaType === 'movie' && (
+                      <Film className={`h-3.5 w-3.5 ${isActive ? 'text-accent' : 'text-tertiary'}`} />
+                    )}
+                    {c.mediaType === 'series' && (
+                      <Tv className={`h-3.5 w-3.5 ${isActive ? 'text-accent' : 'text-tertiary'}`} />
+                    )}
+                    <span>{categoryDisplayLabel(c, t)}</span>
                     {isActive && (
                       <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-accent" />
                     )}
@@ -509,13 +532,16 @@ function MainLayout() {
                   setActiveCatId(c.id);
                   setShowMobileMenu(false);
                 }}
-                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all ${
+                className={`shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all ${
                   isActive
                     ? 'bg-accent text-background font-semibold shadow-sm'
                     : 'bg-surface-hover/80 text-secondary hover:text-primary ring-1 ring-border/50'
                 }`}
               >
-                {categoryDisplayLabel(c, t)}
+                {c.mediaType === 'music' && <Music className="h-3 w-3" />}
+                {c.mediaType === 'movie' && <Film className="h-3 w-3" />}
+                {c.mediaType === 'series' && <Tv className="h-3 w-3" />}
+                <span>{categoryDisplayLabel(c, t)}</span>
               </button>
             );
           })}
@@ -667,6 +693,20 @@ function MainLayout() {
           </section>
         )}
 
+        {activeCategory.mediaType === 'music' && (
+          <MusicView
+            key={activeCategory.id}
+            player={audioPlayer}
+            query={query}
+            playingPath={playingPath}
+            onPlayed={handleMusicPlayed}
+            onOpenScanModal={() => handleOpenScanForCategory(activeCategory)}
+            hasSources={activeCategory.paths.length > 0}
+            onManageSources={() => setShowManageSources(true)}
+            categoryLabel={categoryDisplayLabel(activeCategory, t)}
+            categoryPaths={activeCategory.paths}
+          />
+        )}
         {activeCategory.mediaType === 'movie' && (
           <MoviesView
             key={activeCategory.id}
@@ -690,20 +730,6 @@ function MainLayout() {
             playingPath={playingPath}
             onPlayed={handleMediaPlayed}
             onPlayVideo={handlePlayVideo}
-            onOpenScanModal={() => handleOpenScanForCategory(activeCategory)}
-            hasSources={activeCategory.paths.length > 0}
-            onManageSources={() => setShowManageSources(true)}
-            categoryLabel={categoryDisplayLabel(activeCategory, t)}
-            categoryPaths={activeCategory.paths}
-          />
-        )}
-        {activeCategory.mediaType === 'music' && (
-          <MusicView
-            key={activeCategory.id}
-            player={audioPlayer}
-            query={query}
-            playingPath={playingPath}
-            onPlayed={handleMusicPlayed}
             onOpenScanModal={() => handleOpenScanForCategory(activeCategory)}
             hasSources={activeCategory.paths.length > 0}
             onManageSources={() => setShowManageSources(true)}

@@ -17,7 +17,7 @@ export default function CreateCategoryModal({
 }: CreateCategoryModalProps) {
   const { t } = useLocale();
   const [label, setLabel] = useState('');
-  const [mediaType, setMediaType] = useState<'movie' | 'series' | 'music'>('movie');
+  const [mediaType, setMediaType] = useState<'movie' | 'series' | 'music'>('music');
   const [path, setPath] = useState('');
   const [browsing, setBrowsing] = useState(false);
 
@@ -102,6 +102,19 @@ export default function CreateCategoryModal({
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
+                onClick={() => setMediaType('music')}
+                className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-lg ring-1 transition text-xs ${
+                  mediaType === 'music'
+                    ? 'bg-accent/15 text-accent ring-accent/40 font-medium'
+                    : 'bg-surface-hover/70 text-secondary ring-border hover:bg-surface-hover hover:text-primary'
+                }`}
+              >
+                <Music className="h-5 w-5" />
+                <span>{t('categories.music')}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setMediaType('movie')}
                 className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-lg ring-1 transition text-xs ${
                   mediaType === 'movie'
@@ -124,19 +137,6 @@ export default function CreateCategoryModal({
               >
                 <Tv className="h-5 w-5" />
                 <span>{t('categories.series')}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMediaType('music')}
-                className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-lg ring-1 transition text-xs ${
-                  mediaType === 'music'
-                    ? 'bg-accent/15 text-accent ring-accent/40 font-medium'
-                    : 'bg-surface-hover/70 text-secondary ring-border hover:bg-surface-hover hover:text-primary'
-                }`}
-              >
-                <Music className="h-5 w-5" />
-                <span>{t('categories.music')}</span>
               </button>
             </div>
           </div>
