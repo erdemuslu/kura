@@ -248,6 +248,7 @@ export const en = {
     title: "Music",
     albums: "Albums",
     artists: "Artists",
+    playlists: "Playlists",
     summary: "{a} albums · {r} artists",
     albumCount: "{n} albums",
     trackCount: "{n} tracks",
@@ -268,6 +269,24 @@ export const en = {
     lyricsNotFound: "Lyrics not found",
     queueAutoContinue: "Up next: Auto-continue — {artist}",
     artistFallback: "Artist"
+  },
+  playlists: {
+    title: "Playlists",
+    createNew: "Create New Playlist",
+    createTitle: "Create Playlist",
+    namePlaceholder: "Playlist name",
+    newPlaylistPlaceholder: "New playlist name…",
+    addToPlaylist: "Add to Playlist",
+    removeFromPlaylist: "Remove from Playlist",
+    rename: "Rename Playlist",
+    delete: "Delete Playlist",
+    deleteConfirm: "Are you sure you want to delete this playlist?",
+    noPlaylistsYet: "No playlists yet. Create one to organize your music.",
+    emptyTracks: "No songs in this playlist yet. Add songs from your library!",
+    trackCount: "{n} songs",
+    playAll: "▶ Play Playlist",
+    addedToast: "Added to playlist",
+    removedToast: "Removed from playlist"
   },
   player: {
     queue: "Play Queue",

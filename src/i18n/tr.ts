@@ -250,6 +250,7 @@ export const tr: TranslationDict = {
     title: "Müzik",
     albums: "Albümler",
     artists: "Sanatçılar",
+    playlists: "Çalma Listeleri",
     summary: "{a} albüm · {r} sanatçı",
     albumCount: "{n} albüm",
     trackCount: "{n} parça",
@@ -270,6 +271,24 @@ export const tr: TranslationDict = {
     lyricsNotFound: "Şarkı sözü bulunamadı",
     queueAutoContinue: "Sonra: Otomatik devam — {artist}",
     artistFallback: "Sanatçı"
+  },
+  playlists: {
+    title: "Çalma Listeleri",
+    createNew: "Yeni Çalma Listesi Oluştur",
+    createTitle: "Çalma Listesi Oluştur",
+    namePlaceholder: "Liste adı",
+    newPlaylistPlaceholder: "Yeni liste adı…",
+    addToPlaylist: "Çalma Listesine Ekle",
+    removeFromPlaylist: "Listeden Kaldır",
+    rename: "Listeyi Yeniden Adlandır",
+    delete: "Listeyi Sil",
+    deleteConfirm: "Bu çalma listesini silmek istediğinizden emin misiniz?",
+    noPlaylistsYet: "Henüz çalma listesi yok. Müziklerinizi organize etmek için oluşturun.",
+    emptyTracks: "Bu listede henüz şarkı yok. Arşivinizden şarkı ekleyin!",
+    trackCount: "{n} şarkı",
+    playAll: "▶ Listeyi Çal",
+    addedToast: "Çalma listesine eklendi",
+    removedToast: "Çalma listesinden kaldırıldı"
   },
   player: {
     queue: "Çalma Sırası",

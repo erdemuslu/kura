@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Heart, Plus, SlidersHorizontal } from 'lucide-react';
+import {
+  Edit2,
+  Heart,
+  ListMusic,
+  ListPlus,
+  Play,
+  Plus,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react';
 import {
   coverUrl,
   getAlbumTracks,
@@ -13,16 +22,19 @@ import {
 import { useAudioPlayer } from '../context/AudioPlayerContext';
 import { useLocale } from '../context/LocaleContext';
 import { useFavorites } from '../context/FavoritesContext';
+import { usePlaylists } from '../context/PlaylistContext';
 import { useAlbums, useAlbumTracks, useArtists } from '../hooks/useMedia';
 import { formatDuration, formatQuality } from '../lib/format';
 import { matchesCategoryPath } from '../lib/path';
 import { resetScrollTop } from '../lib/scroll';
 import MediaCard from './MediaCard';
+import AddToPlaylistModal from './AddToPlaylistModal';
 
 type Level =
-  | { kind: 'top'; view: 'albums' | 'artists' | 'favorites' }
+  | { kind: 'top'; view: 'albums' | 'artists' | 'favorites' | 'playlists' }
   | { kind: 'artist'; artist: string }
-  | { kind: 'album'; album: string; artist: string };
+  | { kind: 'album'; album: string; artist: string }
+  | { kind: 'playlist'; playlistId: string };
 
 interface MusicViewProps {
   player: string;
@@ -49,9 +61,16 @@ export default function MusicView({
 }: MusicViewProps) {
   const { t } = useLocale();
   const { favorites, isFavorite, toggleFavorite } = useFavorites();
+  const { playlists, createPlaylist, renamePlaylist, deletePlaylist, removeTrackFromPlaylist } =
+    usePlaylists();
   const [level, setLevel] = useState<Level>({ kind: 'top', view: 'albums' });
   const [batchLabel, setBatchLabel] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
+  const [trackForPlaylist, setTrackForPlaylist] = useState<MediaItem | null>(null);
+  const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [isRenamingPlaylist, setIsRenamingPlaylist] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
 
   const { currentTrack, isPlaying, playTrack, playQueue } = useAudioPlayer();
   const favoriteSongs = favorites.filter((f) => f.mediaType === 'song');
@@ -190,13 +209,29 @@ export default function MusicView({
                 <span className="font-medium text-primary">{level.album}</span>
               </>
             )}
+            {level.kind === 'playlist' && (
+              <>
+                <span>›</span>
+                <button
+                  type="button"
+                  onClick={() => setLevel({ kind: 'top', view: 'playlists' })}
+                  className="hover:text-primary transition"
+                >
+                  {t('playlists.title')}
+                </button>
+                <span>›</span>
+                <span className="font-medium text-primary">
+                  {playlists.find((p) => p.id === level.playlistId)?.name || t('playlists.title')}
+                </span>
+              </>
+            )}
           </nav>
         )}
 
         <div className="flex items-center gap-3 h-8">
           {level.kind === 'top' && (
             <div className="flex rounded-lg bg-surface p-1 ring-1 ring-border">
-              {(['albums', 'artists', 'favorites'] as const).map((v) => (
+              {(['albums', 'artists', 'favorites', 'playlists'] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -211,7 +246,9 @@ export default function MusicView({
                     ? t('music.albums')
                     : v === 'artists'
                     ? t('music.artists')
-                    : t('common.favorites')}
+                    : v === 'favorites'
+                    ? t('common.favorites')
+                    : t('playlists.title')}
                 </button>
               ))}
             </div>
@@ -476,27 +513,195 @@ export default function MusicView({
                       )}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleFavorite({
-                          id: fav.id,
-                          mediaType: 'song',
-                          title: fav.title,
-                        });
-                      }}
-                      title={t('common.removeFromFavorites')}
-                      className="p-1.5 text-accent hover:opacity-75 transition shrink-0"
-                    >
-                      <Heart className="h-4 w-4 fill-current" />
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTrackForPlaylist(item);
+                        }}
+                        title={t('playlists.addToPlaylist')}
+                        className="p-1.5 text-tertiary hover:text-accent transition shrink-0 opacity-40 hover:opacity-100"
+                      >
+                        <ListPlus className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite({
+                            id: fav.id,
+                            mediaType: 'song',
+                            title: fav.title,
+                          });
+                        }}
+                        title={t('common.removeFromFavorites')}
+                        className="p-1.5 text-accent hover:opacity-75 transition shrink-0"
+                      >
+                        <Heart className="h-4 w-4 fill-current" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
         )
+      )}
+
+      {/* Çalma Listeleri Sekmesi (Müzik Ana Sayfası) */}
+      {level.kind === 'top' && level.view === 'playlists' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-tertiary">
+              {t('playlists.title')} ({playlists.length})
+            </h2>
+            {!isCreatingPlaylist && (
+              <button
+                type="button"
+                onClick={() => setIsCreatingPlaylist(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-background hover:bg-accent-hover transition shadow-sm"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>{t('playlists.createNew')}</span>
+              </button>
+            )}
+          </div>
+
+          {isCreatingPlaylist && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newPlaylistName.trim()) return;
+                const pl = createPlaylist(newPlaylistName.trim());
+                setNewPlaylistName('');
+                setIsCreatingPlaylist(false);
+                setLevel({ kind: 'playlist', playlistId: pl.id });
+              }}
+              className="flex items-center gap-2 max-w-md rounded-xl bg-surface p-3 ring-1 ring-border"
+            >
+              <input
+                type="text"
+                autoFocus
+                placeholder={t('playlists.namePlaceholder')}
+                value={newPlaylistName}
+                onChange={(e) => setNewPlaylistName(e.target.value)}
+                className="flex-1 rounded-lg bg-surface-hover px-3 py-1.5 text-xs text-primary ring-1 ring-border focus:ring-accent focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!newPlaylistName.trim()}
+                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-background hover:bg-accent-hover transition disabled:opacity-50"
+              >
+                {t('common.add')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreatingPlaylist(false);
+                  setNewPlaylistName('');
+                }}
+                className="rounded-lg bg-surface-hover px-3 py-1.5 text-xs text-secondary hover:text-primary transition"
+              >
+                {t('common.cancel')}
+              </button>
+            </form>
+          )}
+
+          {playlists.length === 0 && !isCreatingPlaylist ? (
+            <div className="py-24 text-center space-y-3">
+              <ListMusic className="h-10 w-10 text-tertiary mx-auto opacity-40 stroke-[1.2]" />
+              <p className="font-serif text-2xl text-secondary font-normal">{t('playlists.noPlaylistsYet')}</p>
+              <button
+                type="button"
+                onClick={() => setIsCreatingPlaylist(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-background hover:bg-accent-hover transition"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>{t('playlists.createNew')}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {playlists.map((pl) => {
+                const firstCover = pl.tracks.find((t) => t.coverUrl)?.coverUrl;
+                const plMediaItems: MediaItem[] = pl.tracks.map((trk, i) => ({
+                  id: `pl_${pl.id}_${i}_${trk.filePath}`,
+                  title: trk.title,
+                  artist: trk.artist,
+                  album: trk.album,
+                  media_type: 'music',
+                  file_path: trk.filePath,
+                  file_size: 0,
+                  disk_label: '',
+                  format: 'mp3',
+                  duration: trk.duration,
+                  track_number: i + 1,
+                  disc_number: null,
+                  year: null,
+                  show_title: null,
+                  season: null,
+                  episode: null,
+                  folder_path: null,
+                  subtitle_count: 0,
+                  subtitle_path: null,
+                  genre: null,
+                  sample_rate: null,
+                  bit_depth: null,
+                  channels: null,
+                  cover_image_path: trk.coverUrl || null,
+                  created_at: null,
+                  updated_at: null,
+                }));
+
+                return (
+                  <div
+                    key={pl.id}
+                    onClick={() => setLevel({ kind: 'playlist', playlistId: pl.id })}
+                    className="group relative flex flex-col cursor-pointer rounded-xl bg-surface p-3 ring-1 ring-border hover:ring-border-hover transition shadow-sm hover:shadow-md"
+                  >
+                    <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-surface-hover flex items-center justify-center">
+                      {firstCover ? (
+                        <img
+                          src={firstCover}
+                          alt={pl.name}
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-accent/10 to-accent/25 text-accent">
+                          <ListMusic className="h-10 w-10 stroke-[1.2]" />
+                        </div>
+                      )}
+                      {plMediaItems.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (player === 'in_app') {
+                              playQueue(plMediaItems, 0);
+                            }
+                          }}
+                          title={t('playlists.playAll')}
+                          className="absolute bottom-2.5 right-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-background shadow-lg opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 hover:scale-105"
+                        >
+                          <Play className="h-5 w-5 fill-current ml-0.5" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-2.5 min-w-0">
+                      <p className="truncate font-medium text-xs text-primary group-hover:text-accent transition-colors">
+                        {pl.name}
+                      </p>
+                      <p className="text-[11px] text-tertiary">
+                        {t('playlists.trackCount', { n: pl.tracks.length })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Sanatçıya Ait Albümler Izgarası (Sanatçı Tıklandığında) */}
@@ -753,6 +958,16 @@ export default function MusicView({
                           }`}
                         />
                       </span>
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTrackForPlaylist(track);
+                        }}
+                        title={t('playlists.addToPlaylist')}
+                        className="p-1 text-tertiary hover:text-accent transition shrink-0 opacity-30 hover:opacity-100"
+                      >
+                        <ListPlus className="h-3.5 w-3.5" />
+                      </span>
                       <span className="w-12 shrink-0 text-right font-mono text-[11px] text-tertiary">
                         {formatDuration(track.duration)}
                       </span>
@@ -764,6 +979,268 @@ export default function MusicView({
           </div>
         </section>
       )}
+
+      {level.kind === 'playlist' && (() => {
+        const pl = playlists.find((p) => p.id === level.playlistId);
+        if (!pl) {
+          return (
+            <div className="py-20 text-center text-xs text-tertiary">
+              <p>Playlist not found.</p>
+              <button
+                type="button"
+                onClick={() => setLevel({ kind: 'top', view: 'playlists' })}
+                className="mt-3 text-accent hover:underline"
+              >
+                Back to Playlists
+              </button>
+            </div>
+          );
+        }
+
+        const plMediaItems: MediaItem[] = pl.tracks.map((trk, i) => ({
+          id: `pl_${pl.id}_${i}_${trk.filePath}`,
+          title: trk.title,
+          artist: trk.artist,
+          album: trk.album,
+          media_type: 'music',
+          file_path: trk.filePath,
+          file_size: 0,
+          disk_label: '',
+          format: 'mp3',
+          duration: trk.duration,
+          track_number: i + 1,
+          disc_number: null,
+          year: null,
+          show_title: null,
+          season: null,
+          episode: null,
+          folder_path: null,
+          subtitle_count: 0,
+          subtitle_path: null,
+          genre: null,
+          sample_rate: null,
+          bit_depth: null,
+          channels: null,
+          cover_image_path: trk.coverUrl || null,
+          created_at: null,
+          updated_at: null,
+        }));
+
+        const totalDuration = pl.tracks.reduce((sum, trk) => sum + (trk.duration ?? 0), 0);
+        const firstCover = pl.tracks.find((t) => t.coverUrl)?.coverUrl;
+
+        return (
+          <section className="space-y-6 animate-in fade-in duration-150">
+            {/* Playlist Header */}
+            <header className="flex flex-col gap-6 sm:flex-row sm:items-end border-b border-border/40 pb-6">
+              <div className="relative h-40 w-40 shrink-0 overflow-hidden rounded-2xl bg-surface ring-1 ring-border shadow-md flex items-center justify-center">
+                {firstCover ? (
+                  <img
+                    src={firstCover}
+                    alt={pl.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-accent/15 to-accent/30 text-accent">
+                    <ListMusic className="h-16 w-16 stroke-[1.2]" />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0 space-y-2">
+                <span className="text-[11px] font-mono uppercase tracking-widest text-accent font-semibold">
+                  {t('playlists.title')}
+                </span>
+
+                {isRenamingPlaylist ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (renameValue.trim()) {
+                        renamePlaylist(pl.id, renameValue.trim());
+                      }
+                      setIsRenamingPlaylist(false);
+                    }}
+                    className="flex items-center gap-2 max-w-md"
+                  >
+                    <input
+                      type="text"
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      className="flex-1 rounded-xl bg-surface px-3 py-1.5 text-xl font-serif text-primary ring-1 ring-border focus:ring-accent focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-background hover:bg-accent-hover transition"
+                    >
+                      {t('common.save')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsRenamingPlaylist(false)}
+                      className="rounded-lg bg-surface-hover px-3 py-1.5 text-xs text-secondary hover:text-primary transition"
+                    >
+                      {t('common.cancel')}
+                    </button>
+                  </form>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <h1 className="font-serif text-3xl sm:text-4xl text-primary font-normal tracking-tight truncate">
+                      {pl.name}
+                    </h1>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenameValue(pl.name);
+                        setIsRenamingPlaylist(true);
+                      }}
+                      title={t('playlists.rename')}
+                      className="p-1.5 text-tertiary hover:text-primary rounded-lg hover:bg-surface-hover transition"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2 text-xs text-tertiary">
+                  <span>{t('playlists.trackCount', { n: pl.tracks.length })}</span>
+                  {totalDuration > 0 && <span>• {formatDuration(totalDuration)}</span>}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={plMediaItems.length === 0}
+                    onClick={() => {
+                      if (player === 'in_app' && plMediaItems.length > 0) {
+                        playQueue(plMediaItems, 0);
+                      }
+                    }}
+                    className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-xs font-semibold text-background hover:bg-accent-hover transition disabled:opacity-40 shadow-sm"
+                  >
+                    <Play className="h-4 w-4 fill-current" />
+                    <span>{t('playlists.playAll')}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(t('playlists.deleteConfirm'))) {
+                        deletePlaylist(pl.id);
+                        setLevel({ kind: 'top', view: 'playlists' });
+                      }
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl bg-surface-hover px-3.5 py-2 text-xs font-medium text-status-offline hover:bg-status-offline/10 transition ring-1 ring-border"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>{t('playlists.delete')}</span>
+                  </button>
+                </div>
+              </div>
+            </header>
+
+            {/* Track List */}
+            <div className="overflow-hidden rounded-xl bg-surface ring-1 ring-border">
+              {pl.tracks.length === 0 ? (
+                <div className="py-16 text-center text-xs text-tertiary space-y-2">
+                  <ListMusic className="h-8 w-8 mx-auto opacity-40" />
+                  <p>{t('playlists.emptyTracks')}</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border/40">
+                  {plMediaItems.map((trk, i) => {
+                    const isCurrentInApp =
+                      player === 'in_app' && currentTrack?.file_path === trk.file_path;
+                    const isPlayingRow = isCurrentInApp || playingPath === trk.file_path;
+
+                    return (
+                      <div
+                        key={`${trk.file_path}-${i}`}
+                        onClick={() => playSingle(trk)}
+                        className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-xs transition hover:bg-surface-hover cursor-pointer ${
+                          isPlayingRow ? 'bg-accent/10 text-accent font-medium' : 'text-primary'
+                        }`}
+                      >
+                        <span className="w-8 shrink-0 text-center font-mono text-[11px] text-tertiary">
+                          {isCurrentInApp ? (
+                            <span className="text-accent font-bold">
+                              {isPlaying ? '▶' : '⏸'}
+                            </span>
+                          ) : (
+                            i + 1
+                          )}
+                        </span>
+                        <div className="min-w-0 flex-1 flex flex-col justify-center">
+                          <span className={`truncate ${isCurrentInApp ? 'font-semibold text-accent' : 'text-primary'}`}>
+                            {trk.title}
+                          </span>
+                          {trk.artist && (
+                            <span className="truncate text-[11px] text-secondary">
+                              {trk.artist}
+                            </span>
+                          )}
+                        </div>
+                        {trk.album && (
+                          <span className="hidden sm:inline truncate text-[11px] text-tertiary max-w-[200px]">
+                            {trk.album}
+                          </span>
+                        )}
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite({
+                              id: trk.file_path,
+                              mediaType: 'song',
+                              title: trk.title,
+                              subtitle: trk.artist || undefined,
+                              meta: trk.album || undefined,
+                              posterUrl: trk.cover_image_path || undefined,
+                            });
+                          }}
+                          title={
+                            isFavorite(trk.file_path)
+                              ? t('common.removeFromFavorites')
+                              : t('common.addToFavorites')
+                          }
+                          className="p-1 text-tertiary hover:text-accent transition shrink-0"
+                        >
+                          <Heart
+                            className={`h-3.5 w-3.5 ${
+                              isFavorite(trk.file_path)
+                                ? 'fill-current text-accent'
+                                : 'opacity-30 hover:opacity-100'
+                            }`}
+                          />
+                        </span>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeTrackFromPlaylist(pl.id, trk.file_path);
+                          }}
+                          title={t('playlists.removeFromPlaylist')}
+                          className="p-1 text-tertiary hover:text-status-offline transition shrink-0 opacity-40 hover:opacity-100"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="w-12 shrink-0 text-right font-mono text-[11px] text-tertiary">
+                          {formatDuration(trk.duration)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      })()}
+
+      <AddToPlaylistModal
+        isOpen={Boolean(trackForPlaylist)}
+        track={trackForPlaylist}
+        onClose={() => setTrackForPlaylist(null)}
+      />
     </div>
   );
 }

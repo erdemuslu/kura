@@ -4,6 +4,7 @@ import {
   Copy,
   FolderOpen,
   Heart,
+  ListPlus,
   Maximize2,
   Minimize2,
   Pause,
@@ -28,6 +29,7 @@ import {
 import { useLocale } from '../context/LocaleContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { formatDuration, formatSize, getAudioQualityInfo } from '../lib/format';
+import AddToPlaylistModal from './AddToPlaylistModal';
 
 interface NowPlayingModalProps {
   isOpen: boolean;
@@ -199,6 +201,7 @@ export default function NowPlayingModal({
 }: NowPlayingModalProps) {
   const { t } = useLocale();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const [isAddToPlaylistOpen, setIsAddToPlaylistOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('queue');
   const [idleLevel, setIdleLevel] = useState<IdleLevel>('active');
   const [showRemainingTime, setShowRemainingTime] = useState(true);
@@ -708,33 +711,43 @@ export default function NowPlayingModal({
                 >
                   {track.title}
                 </h1>
-                <button
-                  type="button"
-                  onClick={() => {
-                    toggleFavorite({
-                      id: track.file_path,
-                      mediaType: 'song',
-                      title: track.title,
-                      subtitle: track.artist || undefined,
-                      meta: track.album || undefined,
-                      posterUrl: coverUrl(track.file_path),
-                    });
-                  }}
-                  title={
-                    isFavorite(track.file_path)
-                      ? t('common.removeFromFavorites')
-                      : t('common.addToFavorites')
-                  }
-                  className="p-2 text-white/50 hover:text-white transition shrink-0 mt-1 rounded-full hover:bg-white/10"
-                >
-                  <Heart
-                    className={`h-6 w-6 transition-colors ${
+                <div className="flex items-center gap-1 shrink-0 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddToPlaylistOpen(true)}
+                    title={t('playlists.addToPlaylist')}
+                    className="p-2 text-white/50 hover:text-white transition rounded-full hover:bg-white/10"
+                  >
+                    <ListPlus className="h-6 w-6" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleFavorite({
+                        id: track.file_path,
+                        mediaType: 'song',
+                        title: track.title,
+                        subtitle: track.artist || undefined,
+                        meta: track.album || undefined,
+                        posterUrl: coverUrl(track.file_path),
+                      });
+                    }}
+                    title={
                       isFavorite(track.file_path)
-                        ? 'fill-[var(--accent-color)] text-[var(--accent-color)]'
-                        : ''
-                    }`}
-                  />
-                </button>
+                        ? t('common.removeFromFavorites')
+                        : t('common.addToFavorites')
+                    }
+                    className="p-2 text-white/50 hover:text-white transition rounded-full hover:bg-white/10"
+                  >
+                    <Heart
+                      className={`h-6 w-6 transition-colors ${
+                        isFavorite(track.file_path)
+                          ? 'fill-[var(--accent-color)] text-[var(--accent-color)]'
+                          : ''
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
 
               {/* Sanatçı & Ek Bilgi (Full Width) */}
@@ -1264,6 +1277,12 @@ export default function NowPlayingModal({
           />
         </div>
       </footer>
+
+      <AddToPlaylistModal
+        isOpen={isAddToPlaylistOpen}
+        track={track}
+        onClose={() => setIsAddToPlaylistOpen(false)}
+      />
     </div>
   );
 }

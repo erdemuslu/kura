@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Heart,
   ListMusic,
+  ListPlus,
   Pause,
   Play,
   Repeat,
@@ -19,6 +20,7 @@ import { useLocale } from '../context/LocaleContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { formatDuration, formatSize, getAudioQualityInfo } from '../lib/format';
 import NowPlayingModal from './NowPlayingModal';
+import AddToPlaylistModal from './AddToPlaylistModal';
 
 export default function AudioPlayerBar() {
   const { t } = useLocale();
@@ -51,6 +53,7 @@ export default function AudioPlayerBar() {
   const { isFavorite, toggleFavorite } = useFavorites();
 
   const [isNowPlayingOpen, setIsNowPlayingOpen] = useState(false);
+  const [isAddToPlaylistOpen, setIsAddToPlaylistOpen] = useState(false);
   const [hoverSeekTime, setHoverSeekTime] = useState<number | null>(null);
   const [hoverSeekPos, setHoverSeekPos] = useState<number>(0);
   const [isHoveringProgress, setIsHoveringProgress] = useState(false);
@@ -135,6 +138,12 @@ export default function AudioPlayerBar() {
         onPlayQueueItem={(idx) => playQueue(queue, idx)}
         onPlayTrack={playTrack}
         onRemoveFromQueue={removeFromQueue}
+      />
+
+      <AddToPlaylistModal
+        isOpen={isAddToPlaylistOpen}
+        track={currentTrack}
+        onClose={() => setIsAddToPlaylistOpen(false)}
       />
 
       {/* Sağdan Açılan Kuyruk (Drawer) */}
@@ -312,6 +321,17 @@ export default function AudioPlayerBar() {
                   isFavorite(currentTrack.file_path) ? 'fill-current text-accent' : ''
                 }`}
               />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsAddToPlaylistOpen(true);
+              }}
+              title={t('playlists.addToPlaylist')}
+              className="p-1.5 text-tertiary hover:text-accent transition shrink-0 opacity-60 hover:opacity-100"
+            >
+              <ListPlus className="h-4 w-4" />
             </button>
           </div>
 

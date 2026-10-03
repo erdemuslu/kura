@@ -34,6 +34,7 @@ import {
 } from './api/client';
 import { AudioPlayerProvider, useAudioPlayer } from './context/AudioPlayerContext';
 import { FavoritesProvider } from './context/FavoritesContext';
+import { PlaylistProvider } from './context/PlaylistContext';
 import { StatsProvider } from './context/StatsContext';
 import { useLocale } from './context/LocaleContext';
 import { categoryDisplayLabel } from './i18n';
@@ -867,11 +868,13 @@ function MainLayout() {
 export default function App() {
   return (
     <FavoritesProvider>
-      <StatsProvider>
-        <AudioPlayerProvider>
-          <MainLayout />
-        </AudioPlayerProvider>
-      </StatsProvider>
+      <PlaylistProvider>
+        <StatsProvider>
+          <AudioPlayerProvider>
+            <MainLayout />
+          </AudioPlayerProvider>
+        </StatsProvider>
+      </PlaylistProvider>
     </FavoritesProvider>
   );
 }
