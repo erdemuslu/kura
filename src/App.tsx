@@ -228,6 +228,9 @@ function MainLayout() {
       // Video oynatıcı açıkken veya input içindeyken diğer kısayollar çalışmasın
       if (activeVideo || isInput) return;
 
+      // Cmd, Ctrl veya Alt basılıyken tek tuşlu kısayolları tetikleme (Cmd+Q, Cmd+M vb.)
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (e.code === 'Space') {
         e.preventDefault();
         togglePlay();

@@ -389,6 +389,11 @@ export default function NowPlayingModal({
         return;
       }
 
+      // Cmd, Ctrl veya Alt basılıyken tek tuşlu kısayolları tetikleme (Cmd+Q, Cmd+W vb.)
+      if (e.metaKey || e.ctrlKey || e.altKey) {
+        return;
+      }
+
       switch (e.key) {
         case 'Escape':
           e.preventDefault();

@@ -481,6 +481,9 @@ export default function VideoPlayerModal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
+      // Cmd, Ctrl veya Alt basılıyken tek tuşlu kısayolları tetikleme (Cmd+Q, Cmd+W, Cmd+H vb.)
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (e.code === 'Space') {
         e.preventDefault();
         togglePlay();

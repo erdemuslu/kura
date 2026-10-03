@@ -35,7 +35,6 @@ pub struct HlsManager {
 #[derive(Clone)]
 pub struct ServerState {
     pub db_path: PathBuf,
-    pub dist: PathBuf,
     pub hls: std::sync::Arc<HlsManager>,
 }
 
@@ -227,10 +226,9 @@ async fn static_handler(uri: axum::http::Uri) -> Response {
     }
 }
 
-pub async fn run_server(db_path: PathBuf, dist: PathBuf, port: u16) {
+pub async fn run_server(db_path: PathBuf, port: u16) {
     let state = ServerState {
         db_path,
-        dist,
         hls: std::sync::Arc::new(HlsManager::default()),
     };
 

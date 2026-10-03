@@ -374,23 +374,6 @@ async fn get_remote_info(
     })
 }
 
-/// `dist/` klasörünü Axum'a statik servis için çözer.
-/// Öncelik sırası: KURA_DIST ortam değişkeni, sonra CWD'ye göre
-/// geliştirme/üretim adayları (tauri dev CWD'si src-tauri'dir).
-fn resolve_dist_path() -> PathBuf {
-    if let Ok(p) = std::env::var("KURA_DIST") {
-        return PathBuf::from(p);
-    }
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    [
-        cwd.join("../dist"), // tauri dev (CWD = src-tauri)
-        cwd.join("dist"),    // CWD = proje kökü
-        cwd.join("../../dist"),
-    ]
-    .into_iter()
-    .find(|p| p.is_dir())
-    .unwrap_or_else(|| cwd.join("../dist"))
-}
 
 /// Ayarlar: uzaktan erişim token doğrulamasını açar/kapar.
 /// Yalnızca masaüstü IPC'sinden değiştirilebilir (ağ üzerinden değil).
@@ -674,6 +657,9 @@ pub fn run() {
         // Native klasör seçme diyaloğu (ScanPanel "Gözat…" butonu)
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            let menu = tauri::menu::Menu::default(app.handle())?;
+            app.set_menu(menu)?;
+
             // DB, kalıcı olması için uygulama veri dizininde tutulur
             // (CWD değil — harici disk çıkarılsa bile indeks korunur).
             let data_dir = app.path().app_data_dir()?;
@@ -691,9 +677,8 @@ pub fn run() {
             // Not: `app` (`&mut tauri::App`) Send değildir; async bloğa
             // taşınmadan önce gereken değerler burada kopyalanır.
             let server_db_path = app.state::<AppState>().db_path.clone();
-            let dist = resolve_dist_path();
             tauri::async_runtime::spawn(async move {
-                server::run_server(server_db_path, dist, SERVER_PORT).await;
+                server::run_server(server_db_path, SERVER_PORT).await;
             });
 
             Ok(())
